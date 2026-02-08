@@ -23,13 +23,7 @@ export const Navbar = () => {
                         Testimonials
                     </Link>
                 </nav>
-                <div className="flex items-center space-x-4">
-                    <Link to="/questionnaire">
-                        <Button variant="default" size="sm">
-                            Start My Plan
-                        </Button>
-                    </Link>
-                </div>
+                <div className="flex items-center space-x-4"></div>
             </Container>
         </header>
     );

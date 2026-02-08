@@ -5,6 +5,9 @@ const storageService = require('../services/storageService');
 
 const profileSchema = Joi.object({
     id: Joi.string().required(), // Simple ID from client for now
+    name: Joi.string().optional(),
+    age: Joi.number().optional(),
+    currentEducation: Joi.string().optional(),
     gpa: Joi.number().min(0).max(4.0).optional(),
     intended_major: Joi.string().required(),
     career_goal: Joi.string().required(),

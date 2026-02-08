@@ -57,7 +57,7 @@ const Results = () => {
                             </h1>
                         </div>
                         <div className="flex gap-3">
-                            <Button variant="outline" size="sm"><Share2 className="mr-2 h-4 w-4" /> Share</Button>
+
                             <Button size="sm" className="bg-blue-600 hover:bg-blue-700"><Download className="mr-2 h-4 w-4" /> Download PDF</Button>
                         </div>
                     </div>
@@ -100,22 +100,39 @@ const Results = () => {
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ delay: 0.2 + (idx * 0.1) }}
                             >
-                                <Card className="border-l-4 border-l-amber-400 overflow-hidden hover:shadow-lg transition-shadow bg-gradient-to-r from-amber-500/5 to-transparent">
-                                    <CardHeader className="pb-2">
-                                        <CardTitle className="text-xl flex justify-between items-start">
-                                            {schol.name}
-                                            <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-xs px-2 py-1 rounded-full border border-amber-200 dark:border-amber-800">High Match</span>
-                                        </CardTitle>
+                                <Card className="overflow-hidden hover:shadow-lg transition-all border-l-4 border-l-amber-500 bg-card">
+                                    <div className="absolute top-0 right-0 p-3 opacity-10">
+                                        <Trophy size={80} className="text-amber-500 rotate-12 translate-x-4 -translate-y-4" />
+                                    </div>
+                                    <CardHeader className="pb-2 relative z-10">
+                                        <div className="flex justify-between items-start gap-2">
+                                            <CardTitle className="text-xl font-bold text-foreground">
+                                                {schol.name}
+                                            </CardTitle>
+                                            <span className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap">
+                                                Match Found
+                                            </span>
+                                        </div>
                                     </CardHeader>
-                                    <CardContent>
-                                        <div className="flex flex-col gap-3 mt-2">
-                                            <div className="flex items-center gap-2 text-sm text-foreground/80">
-                                                <DollarSign className="w-4 h-4 text-green-500" />
-                                                <span className="font-semibold">{schol.amount}</span>
+                                    <CardContent className="relative z-10">
+                                        <div className="space-y-3 mt-1">
+                                            <div className="flex items-center gap-3 p-2 rounded-lg bg-secondary/50">
+                                                <div className="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-md text-green-600 dark:text-green-400">
+                                                    <DollarSign className="w-4 h-4" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-muted-foreground uppercase font-semibold">Value</p>
+                                                    <p className="font-bold text-foreground">{schol.amount}</p>
+                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                                <Calendar className="w-4 h-4" />
-                                                Deadline: <span className="text-foreground">{schol.deadline}</span>
+                                            <div className="flex items-center gap-3 p-2 rounded-lg bg-secondary/50">
+                                                <div className="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded-md text-blue-600 dark:text-blue-400">
+                                                    <Calendar className="w-4 h-4" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-muted-foreground uppercase font-semibold">Deadline</p>
+                                                    <p className="font-medium text-foreground">{schol.deadline}</p>
+                                                </div>
                                             </div>
                                         </div>
                                     </CardContent>

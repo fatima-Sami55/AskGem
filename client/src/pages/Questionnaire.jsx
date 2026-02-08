@@ -1,292 +1,368 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Container } from '../components/layout/container';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../components/ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Send, User, Sparkles, Loader2, GraduationCap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { saveProfile, updateProfile, getNextQuestion } from '../services/api';
 
-const steps = [
+// --- Static Questions Configuration ---
+const STATIC_QUESTIONS = [
     {
-        id: 'basics',
-        title: "Let's start with the basics",
-        description: "Tell us a bit about yourself so we can personalize your journey.",
-        fields: [
-            { name: 'name', label: 'Full Name', type: 'text', placeholder: 'e.g. Alex Johnson' },
-            { name: 'age', label: 'Age', type: 'number', placeholder: 'e.g. 18' },
-            { name: 'currentEducation', label: 'Current Education Level', type: 'select', options: ['High School', 'Undergraduate', 'Postgraduate', 'Working Professional'] },
-            { name: 'english_proficiency', label: 'English Proficiency', type: 'select', options: ['Native', 'Advanced', 'Intermediate', 'Beginner'] }
-        ]
+        id: 'name',
+        text: "Hello! I'm Gem, your AI academic counselor. I'm here to build your personalized path to success. First things first, what is your full name?",
+        type: 'text',
+        placeholder: 'e.g. Alex Johnson'
+    },
+    {
+        id: 'age',
+        text: "Nice to meet you! How old are you?",
+        type: 'number',
+        placeholder: 'e.g. 18'
+    },
+    {
+        id: 'currentEducation',
+        text: "What is your current education level?",
+        type: 'select',
+        options: ['High School', 'Undergraduate', 'Postgraduate', 'Working Professional']
+    },
+    {
+        id: 'english_proficiency',
+        text: "How would you rate your English proficiency?",
+        type: 'select',
+        options: ['Native', 'Advanced', 'Intermediate', 'Beginner']
+    },
+    {
+        id: 'intended_major',
+        text: "What major or field of study are you aiming for?",
+        type: 'text',
+        placeholder: 'e.g. Computer Science'
+    },
+    {
+        id: 'country_preference',
+        text: "Do you have any specific countries in mind for your studies?",
+        type: 'text',
+        placeholder: 'e.g. USA, UK, Germany, Canada'
     },
     {
         id: 'interests',
-        title: "What are you interested in?",
-        description: "Help us find the best programs for you.",
-        fields: [
-            { name: 'intended_major', label: 'Preferred Major', type: 'text', placeholder: 'e.g. Computer Science' },
-            { name: 'interests', label: 'Specific Interests (comma separated)', type: 'text', placeholder: 'e.g. AI, Robotics, Ethics' },
-            { name: 'country_preference', label: 'Preferred Countries (comma separated)', type: 'text', placeholder: 'e.g. USA, Germany' }
-        ]
+        text: "What are some of your specific academic interests? (Separate by comma)",
+        type: 'text',
+        placeholder: 'e.g. Robotics, Ethics, History'
     },
     {
-        id: 'goals',
-        title: "Your Goals & Budget",
-        description: "We'll optimize recommendations based on these constraints.",
-        fields: [
-            { name: 'career_goal', label: 'Dream Career / Goal', type: 'text', placeholder: 'e.g. AI Researcher' },
-            { name: 'budget_range', label: 'Annual Budget', type: 'select', options: ['Less than $10k', '$10k - $30k', '$30k - $50k', '$50k+'] },
-            { name: 'risk_tolerance', label: 'Risk Tolerance', type: 'select', options: ['Low', 'Medium', 'High'] }
-        ]
+        id: 'budget_range',
+        text: "To help me find the best options, what is your annual budget range for tuition?",
+        type: 'select',
+        options: ['Less than $10k', '$10k - $30k', '$30k - $50k', '$50k+']
+    },
+    {
+        id: 'career_goal',
+        text: "What is your dream career goal?",
+        type: 'text',
+        placeholder: 'e.g. AI Researcher'
     }
 ];
 
 const MAX_DYNAMIC_QUESTIONS = 3;
 
 const Questionnaire = () => {
-    const [currentStep, setCurrentStep] = useState(0);
+    // --- State ---
+    const [messages, setMessages] = useState([]);
+    const [inputValue, setInputValue] = useState("");
+    const [isTyping, setIsTyping] = useState(false);
+    const [currentStep, setCurrentStep] = useState(0); // Index for STATIC_QUESTIONS
     const [formData, setFormData] = useState({});
-    const [loading, setLoading] = useState(false);
 
-    // Dynamic Question State
+    // Phase Management
     const [isDynamicPhase, setIsDynamicPhase] = useState(false);
-    const [dynamicQuestion, setDynamicQuestion] = useState(null);
-    const [dynamicAnswer, setDynamicAnswer] = useState("");
     const [dynamicCount, setDynamicCount] = useState(0);
+    const [currentDynamicQ, setCurrentDynamicQ] = useState(null);
     const [profileId, setProfileId] = useState(null);
 
     const navigate = useNavigate();
+    const scrollRef = useRef(null);
+    const hasInitialized = useRef(false);
 
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
+    // --- Effects ---
 
-    const handleDynamicAnswerChange = (e) => {
-        setDynamicAnswer(e.target.value);
-    };
-
-    const handleNext = async () => {
-        // STATIC PHASE LOGIC
-        if (!isDynamicPhase) {
-            if (currentStep < steps.length - 1) {
-                setCurrentStep(prev => prev + 1);
-            } else {
-                // Submit Initial Profile and Enter Dynamic Phase
-                setLoading(true);
-                try {
-                    const studentId = 'student_' + Math.random().toString(36).substr(2, 9);
-                    const profileData = {
-                        id: studentId,
-                        // gpa removed
-                        intended_major: formData.intended_major,
-                        career_goal: formData.career_goal,
-                        country_preference: formData.country_preference,
-                        budget_range: formData.budget_range,
-                        english_proficiency: formData.english_proficiency || 'Intermediate',
-                        interests: formData.interests ? formData.interests.split(',').map(s => s.trim()) : [],
-                        risk_tolerance: formData.risk_tolerance || 'Medium',
-                        academic_strengths: [],
-                        academic_weaknesses: [],
-                        dynamic_answers: []
-                    };
-
-                    await saveProfile(profileData);
-                    setProfileId(studentId);
-
-                    // Fetch First Dynamic Question
-                    try {
-                        const aiRes = await getNextQuestion(studentId);
-                        // Expecting aiRes to match Prompt Template JSON { question, reason }
-                        // Note: Backend aiController returns { status: 'success', data: { question, reason } }
-                        const questionData = aiRes.data;
-
-                        setDynamicQuestion(questionData);
-                        setIsDynamicPhase(true);
-                        setDynamicCount(1);
-                    } catch (aiError) {
-                        console.error("Failed to fetch dynamic question, skipping:", aiError);
-                        navigate('/loading', { state: { profileId: studentId } });
-                    }
-
-                } catch (error) {
-                    console.error("Form processing error", error);
-                    navigate('/loading', { state: { profileId: 'demo_id' } });
-                } finally {
-                    setLoading(false);
-                }
-            }
+    // Initial Greeting
+    useEffect(() => {
+        if (!hasInitialized.current) {
+            hasInitialized.current = true;
+            // Add first question with a small delay for effect
+            setTimeout(() => {
+                addBotMessage(STATIC_QUESTIONS[0].text);
+            }, 500);
         }
-        // DYNAMIC PHASE LOGIC
-        else {
-            if (!dynamicAnswer.trim()) return; // Prevent empty answers
+    }, []);
 
-            setLoading(true);
+    // Auto-scroll to bottom
+    useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+    }, [messages, isTyping]);
+
+    // --- Helpers ---
+
+    const addBotMessage = (text) => {
+        setMessages(prev => [...prev, { type: 'bot', text, timestamp: new Date() }]);
+    };
+
+    const addUserMessage = (text) => {
+        setMessages(prev => [...prev, { type: 'user', text, timestamp: new Date() }]);
+    };
+
+    const handleStaticPhase = async (answer) => {
+        // 1. Store Answer
+        const currentQ = STATIC_QUESTIONS[currentStep];
+        const newFormData = { ...formData, [currentQ.id]: answer };
+        setFormData(newFormData);
+
+        // 2. Check if more static questions remain
+        if (currentStep < STATIC_QUESTIONS.length - 1) {
+            setIsTyping(true);
+            setTimeout(() => {
+                setCurrentStep(prev => prev + 1);
+                addBotMessage(STATIC_QUESTIONS[currentStep + 1].text);
+                setIsTyping(false);
+            }, 800); // Simulate typing delay
+        } else {
+            // 3. Transition to Dynamic Phase
+            setIsTyping(true);
+            addBotMessage("Thanks for sharing! Analyzing your profile now to tailor my next questions...");
+
             try {
-                // Save answer to backend
-                await updateProfile(profileId, {
-                    // We append the new answer. In real app we might want to store Q&A pairs.
-                    // For now, simpler: just push to a list in the backend if supported, 
-                    // or we accept that 'updateProfile' merges. 
-                    // Since backend 'saveProfile' merges top-level keys, to append to an array we'd need to fetch-modify-save or have specific backend logic.
-                    // Let's assume we send 'last_answer' or similar for the AI to see next time,
-                    // or ideally we actually updated the profile. 
-                    // BUT: storageService merge is shallow for top level. 
-                    // Hack for prototype: We just send the answer as a field 'last_response' 
-                    // or we rely on the client keeping track?
-                    // Let's rely on the fact that PROMPTS don't strictly need history if we just want "another" question,
-                    // but usually they do. 
-                    // Let's send `dynamic_context: { q: ..., a: ... }` to backend?
-                    // Given constraints, I'll send `additional_info: dynamicAnswer` to update the profile context.
-                    additional_info: (formData.additional_info || "") + `\nQ: ${dynamicQuestion.question}\nA: ${dynamicAnswer}`
-                });
+                // Initial Save to Backend
+                const studentId = 'student_' + Math.random().toString(36).substr(2, 9);
 
-                // Update local formdata so next append works
-                setFormData(prev => ({
-                    ...prev,
-                    additional_info: (prev.additional_info || "") + `\nQ: ${dynamicQuestion.question}\nA: ${dynamicAnswer}`
-                }));
+                // Format interests as array
+                const interestsArray = newFormData.interests
+                    ? newFormData.interests.split(',').map(s => s.trim())
+                    : [];
 
-                setDynamicAnswer(""); // Clear input
+                const profileData = {
+                    id: studentId,
+                    ...newFormData,
+                    interests: interestsArray,
+                    risk_tolerance: 'Medium' // Default
+                };
 
-                if (dynamicCount < MAX_DYNAMIC_QUESTIONS) {
-                    const aiRes = await getNextQuestion(profileId);
-                    setDynamicQuestion(aiRes.data);
-                    setDynamicCount(prev => prev + 1);
-                } else {
-                    // Finished dynamic questions
-                    navigate('/loading', { state: { profileId } });
-                }
+                await saveProfile(profileData);
+                setProfileId(studentId);
+
+                // Fetch First Dynamic Question
+                const aiRes = await getNextQuestion(studentId);
+                const questionData = aiRes.data;
+
+                setIsDynamicPhase(true);
+                setDynamicCount(1);
+                setCurrentDynamicQ(questionData);
+
+                setIsTyping(false);
+                addBotMessage(questionData.question);
 
             } catch (error) {
-                console.error("Dynamic phase error", error);
-                navigate('/loading', { state: { profileId } });
-            } finally {
-                setLoading(false);
+                console.error("Error starting dynamic phase:", error);
+
+                // Fallback: If AI fails, proceed to loading (where it might try again or fail gracefully)
+                // But we must have a profileId. If saveProfile failed, we are in trouble.
+                // If it was a 400 error, we should probably tell the user or retry.
+                if (error.response && error.response.status === 400) {
+                    addBotMessage("I'm having trouble understanding some details. Let's try to generate the results with what we have.");
+                    navigate('/loading', { state: { profileId: 'demo_id', error: true } });
+                } else {
+                    navigate('/loading', { state: { profileId: 'demo_id' } });
+                }
             }
         }
     };
 
-    const handleBack = () => {
-        if (!isDynamicPhase && currentStep > 0) {
-            setCurrentStep(prev => prev - 1);
+    const handleDynamicPhase = async (answer) => {
+        setIsTyping(true);
+
+        try {
+            // Save answer
+            await updateProfile(profileId, {
+                additional_info: (formData.additional_info || "") + `\nQ: ${currentDynamicQ.question}\nA: ${answer}`
+            });
+
+            // Update local state for accumulation if needed
+            setFormData(prev => ({
+                ...prev,
+                additional_info: (prev.additional_info || "") + `\nQ: ${currentDynamicQ.question}\nA: ${answer}`
+            }));
+
+            if (dynamicCount < MAX_DYNAMIC_QUESTIONS) {
+                // Fetch Next
+                const aiRes = await getNextQuestion(profileId);
+                const nextQ = aiRes.data;
+
+                setDynamicCount(prev => prev + 1);
+                setCurrentDynamicQ(nextQ);
+
+                setIsTyping(false);
+                addBotMessage(nextQ.question);
+            } else {
+                // Finish
+                addBotMessage("Perfect! I have everything I need. Generating your roadmap now...");
+                setTimeout(() => {
+                    navigate('/loading', { state: { profileId } });
+                }, 2000);
+            }
+
+        } catch (error) {
+            console.error("Error in dynamic loop:", error);
+            // If dynamic loop fails, just go to results
+            navigate('/loading', { state: { profileId } });
         }
     };
 
-    const currentTitle = isDynamicPhase ? "AI Follow-up Question" : steps[currentStep].title;
-    const currentDesc = isDynamicPhase ? "Our AI needs a bit more detail to perfect your roadmap." : steps[currentStep].description;
-    const progress = isDynamicPhase
-        ? 90 + ((dynamicCount / MAX_DYNAMIC_QUESTIONS) * 10)
-        : ((currentStep + 1) / steps.length) * 90; // Scale static to 90%
+    const handleSend = () => {
+        if (!inputValue.trim()) return;
+
+        const answer = inputValue;
+        setInputValue(""); // Clear input
+        addUserMessage(answer);
+
+        if (!isDynamicPhase) {
+            handleStaticPhase(answer);
+        } else {
+            handleDynamicPhase(answer);
+        }
+    };
+
+    const handleOptionSelect = (option) => {
+        addUserMessage(option);
+        if (!isDynamicPhase) {
+            handleStaticPhase(option);
+        } else {
+            // Should rarely happen unless dynamic Q sends options (not implemented yet)
+            handleDynamicPhase(option);
+        }
+    };
+
+    // --- Render Logic ---
+
+    // Determine Input Type
+    const currentQ = isDynamicPhase ? { type: 'text', placeholder: 'Type your answer...' } : STATIC_QUESTIONS[currentStep];
+    const isSelect = !isDynamicPhase && currentQ.type === 'select';
 
     return (
-        <div className="min-h-[80vh] flex items-center justify-center bg-background py-12">
-            <Container className="max-w-2xl">
-                {/* Progress Bar */}
-                <div className="mb-8">
-                    <div className="flex justify-between text-sm font-medium text-muted-foreground mb-2">
-                        <span>{isDynamicPhase ? `AI Analysis: Question ${dynamicCount}/${MAX_DYNAMIC_QUESTIONS}` : `Step ${currentStep + 1} of ${steps.length}`}</span>
-                        <span>{Math.round(progress)}% Completed</span>
-                    </div>
-                    <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                        <motion.div
-                            className="h-full bg-primary"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${progress}%` }}
-                            transition={{ duration: 0.5 }}
-                        />
+        <div className="min-h-screen bg-background relative overflow-hidden flex flex-col pt-16">
+            {/* Background Effects */}
+            <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/5 rounded-full blur-[100px] animate-pulse" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/5 rounded-full blur-[100px] animate-pulse delay-1000" />
+            </div>
+
+            <Container className="flex-1 flex flex-col max-w-3xl w-full mx-auto md:py-8 h-[80vh]">
+
+                {/* Chat History Area */}
+                <div
+                    ref={scrollRef}
+                    className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth"
+                >
+                    <AnimatePresence>
+                        {messages.map((msg, idx) => (
+                            <motion.div
+                                key={idx}
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{ duration: 0.3 }}
+                                className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                            >
+                                <div className={`flex items-end gap-3 max-w-[80%] ${msg.type === 'user' ? 'flex-row-reverse' : ''}`}>
+
+                                    {/* Avatar */}
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.type === 'user'
+                                            ? 'bg-primary text-primary-foreground'
+                                            : 'bg-gradient-to-br from-blue-500 to-purple-600 text-white'
+                                        }`}>
+                                        {msg.type === 'user' ? <User size={16} /> : <GraduationCap size={16} />}
+                                    </div>
+
+                                    {/* Bubble */}
+                                    <div className={`p-4 rounded-2xl shadow-sm ${msg.type === 'user'
+                                            ? 'bg-primary text-primary-foreground rounded-br-none'
+                                            : 'bg-secondary/80 backdrop-blur-md border border-white/10 rounded-bl-none'
+                                        }`}>
+                                        <p className="text-sm md:text-base leading-relaxed">{msg.text}</p>
+                                    </div>
+
+                                </div>
+                            </motion.div>
+                        ))}
+
+                        {/* Typing Indicator */}
+                        {isTyping && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex justify-start"
+                            >
+                                <div className="flex items-end gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white shrink-0">
+                                        <Sparkles size={16} className="animate-spin-slow" />
+                                    </div>
+                                    <div className="bg-secondary/50 p-4 rounded-2xl rounded-bl-none">
+                                        <div className="flex gap-1.5">
+                                            <div className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                            <div className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                            <div className="w-2 h-2 bg-foreground/50 rounded-full animate-bounce" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+
+                {/* Input Area */}
+                <div className="p-4 bg-background/80 backdrop-blur-md border-t border-border/50 sticky bottom-0">
+                    <div className="max-w-3xl mx-auto w-full">
+                        {isSelect ? (
+                            <div className="flex flex-wrap gap-2 justify-end">
+                                {currentQ.options.map((opt) => (
+                                    <Button
+                                        key={opt}
+                                        variant="outline"
+                                        className="rounded-full hover:bg-primary hover:text-primary-foreground transition-all"
+                                        onClick={() => handleOptionSelect(opt)}
+                                    >
+                                        {opt}
+                                    </Button>
+                                ))}
+                            </div>
+                        ) : (
+                            <form
+                                onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+                                className="relative flex items-center gap-2"
+                            >
+                                <Input
+                                    value={inputValue}
+                                    onChange={(e) => setInputValue(e.target.value)}
+                                    placeholder={currentQ.placeholder || "Type a message..."}
+                                    className="pr-12 h-14 rounded-full text-base bg-secondary/30 border-secondary-foreground/10 focus-visible:ring-blue-500/20"
+                                    autoFocus
+                                    disabled={isTyping}
+                                    type={currentQ.type || 'text'}
+                                />
+                                <Button
+                                    type="submit"
+                                    size="icon"
+                                    disabled={!inputValue.trim() || isTyping}
+                                    className="absolute right-2 top-2 h-10 w-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20"
+                                >
+                                    {isTyping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                </Button>
+                            </form>
+                        )}
                     </div>
                 </div>
 
-                <AnimatePresence mode="wait">
-                    <motion.div
-                        key={isDynamicPhase ? `dynamic-${dynamicCount}` : currentStep}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        <Card className="border-2 shadow-lg">
-                            <CardHeader>
-                                <CardTitle className="text-2xl">{dynamicQuestion ? "AI Question" : currentTitle}</CardTitle>
-                                <CardDescription className="text-lg">{currentDesc}</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-6">
-                                {isDynamicPhase ? (
-                                    <div className="space-y-4">
-                                        <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
-                                            <p className="font-medium text-lg text-primary">
-                                                {dynamicQuestion?.question || "Thinking..."}
-                                            </p>
-                                            {dynamicQuestion?.reason && (
-                                                <p className="text-sm text-muted-foreground mt-2 italic">
-                                                    Why we ask: {dynamicQuestion.reason}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium">Your Answer</label>
-                                            <Input
-                                                value={dynamicAnswer}
-                                                onChange={handleDynamicAnswerChange}
-                                                placeholder="Type your answer here..."
-                                                autoFocus
-                                            />
-                                        </div>
-                                    </div>
-                                ) : (
-                                    steps[currentStep].fields.map((field) => (
-                                        <div key={field.name} className="space-y-2">
-                                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                                {field.label}
-                                            </label>
-                                            {field.type === 'select' ? (
-                                                <select
-                                                    name={field.name}
-                                                    value={formData[field.name] || ''}
-                                                    onChange={handleInputChange}
-                                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                    <option value="" disabled>Select an option</option>
-                                                    {field.options.map(opt => (
-                                                        <option key={opt} value={opt}>{opt}</option>
-                                                    ))}
-                                                </select>
-                                            ) : (
-                                                <Input
-                                                    type={field.type}
-                                                    name={field.name}
-                                                    placeholder={field.placeholder}
-                                                    value={formData[field.name] || ''}
-                                                    onChange={handleInputChange}
-                                                    autoFocus={true}
-                                                />
-                                            )}
-                                        </div>
-                                    )))}
-                            </CardContent>
-                            <CardFooter className="flex justify-between pt-6">
-                                <Button
-                                    variant="ghost"
-                                    onClick={handleBack}
-                                    disabled={currentStep === 0 || isDynamicPhase}
-                                    className={currentStep === 0 || isDynamicPhase ? "invisible" : ""}
-                                >
-                                    <ArrowLeft className="mr-2 h-4 w-4" /> Back
-                                </Button>
-                                <Button onClick={handleNext} disabled={loading}>
-                                    {loading ? 'Processing...' : (
-                                        isDynamicPhase
-                                            ? (dynamicCount < MAX_DYNAMIC_QUESTIONS ? 'Next Question' : 'View Results')
-                                            : (currentStep === steps.length - 1 ? 'Begin Analysis' : 'Next')
-                                    )}
-                                    {!loading && <ArrowRight className="ml-2 h-4 w-4" />}
-                                </Button>
-                            </CardFooter>
-                        </Card>
-                    </motion.div>
-                </AnimatePresence>
             </Container>
         </div>
     );

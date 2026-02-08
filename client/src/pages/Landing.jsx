@@ -96,17 +96,6 @@ const Landing = () => {
                 </Container>
             </section>
 
-            {/* Stats/Trust Section */}
-            <section className="py-20 border-y border-white/5 bg-secondary/5">
-                <Container>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-                        <Stat number="98%" label="Accuracy Rate" />
-                        <Stat number="50k+" label="Universities" />
-                        <Stat number="$2M+" label="Scholarships Found" />
-                        <Stat number="24/7" label="AI Availability" />
-                    </div>
-                </Container>
-            </section>
             {/* Testimonials Carousel */}
             <section id="testimonials" className="py-24 bg-background relative overflow-hidden">
                 <Container>
@@ -147,22 +136,22 @@ const Landing = () => {
 const testimonials = [
     {
         quote: "I found my dream scholarship in Germany within minutes. AskGem showed me options I didn't know existed.",
-        author: "Sarah K.",
+        author: "Areesha H.",
         role: "Computer Science Student"
     },
     {
         quote: "The roadmap feature is a game changer. It told me exactly what exams to take and when to apply.",
-        author: "Ahmed M.",
+        author: "Maryam Z.",
         role: "Engineering Applicant"
     },
     {
         quote: "Honestly, the AI university matching is scary accurate. It matched me with schools that fit my budget perfectly.",
-        author: "Jessica L.",
+        author: "Ahmed J.",
         role: "MBA Candidate"
     },
     {
         quote: "Process was so smooth. The question flow felt like talking to a real counselor.",
-        author: "David R.",
+        author: "Mufaza U.",
         role: "Medical Student"
     },
     {
