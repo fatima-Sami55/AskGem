@@ -1,0 +1,13 @@
+{
+    "name": "askgem-root",
+    "version": "1.0.0",
+    "scripts": {
+        "install-client": "cd client && npm install",
+        "install-server": "cd server && npm install",
+        "build": "cd client && npm install && npm run build"
+    },
+    "dependencies": {},
+    "engines": {
+        "node": ">=16"
+    }
+}

@@ -646,5 +646,26 @@
         "admission_probability": "Medium-Low"
       }
     ]
+  },
+  "student_7rbcvjjl6": {
+    "id": "student_7rbcvjjl6",
+    "name": "fatima",
+    "age": 19,
+    "currentEducation": "Undergraduate",
+    "english_proficiency": "Native",
+    "intended_major": "cs",
+    "gpa": 3,
+    "country_preference": "cs",
+    "interests": [
+      "cs"
+    ],
+    "budget_range": "Less than $10k",
+    "career_goal": "robotics",
+    "risk_tolerance": "Medium",
+    "questions_completed": false,
+    "report_generated": false,
+    "question_count": 1,
+    "lastUpdated": "2026-02-09T18:43:01.479Z",
+    "additional_info": "\nQ: Within robotics, are you more interested in programming robot intelligence/software or designing/controlling their physical systems?\nA: esigning/controlling their physical systems"
   }
 }
