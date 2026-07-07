@@ -3,6 +3,7 @@ const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 const { calculateProfileScore } = require('../services/profileScoreService');
 const recommendationsService = require('../services/recommendationsService');
+const { assertAiAvailable } = require('../utils/aiServerClient');
 
 const PKR_TO_USD = 280;
 
@@ -290,7 +291,10 @@ exports.getUniversityRecommendations = catchAsync(async (req, res, next) => {
   if (result.error) return next(result.error);
 
   try {
-    const data = await recommendationsService.getUniversityRecommendations('local-user', result.merged);
+    await assertAiAvailable();
+    const forceRefresh = req.query.refresh === 'true';
+    console.info('[recommendations] universities start');
+    const data = await recommendationsService.getUniversityRecommendations('local-user', result.merged, { forceRefresh });
     const universities = data.universities || [];
     const source = data.source || 'unknown';
     console.info(
@@ -307,6 +311,9 @@ exports.getUniversityRecommendations = catchAsync(async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (err.statusCode === 429 || err.status === 429) {
+      return next(err);
+    }
     console.error('[ProfileController] University recommendations failed:', err.message);
     if (err.cause?.code === 'TimeoutError' || err.name === 'TimeoutError' || /timeout/i.test(err.message)) {
       return next(new AppError(
@@ -323,7 +330,10 @@ exports.getScholarshipRecommendations = catchAsync(async (req, res, next) => {
   if (result.error) return next(result.error);
 
   try {
-    const data = await recommendationsService.getScholarshipRecommendations('local-user', result.merged);
+    await assertAiAvailable();
+    const forceRefresh = req.query.refresh === 'true';
+    console.info('[recommendations] scholarships start');
+    const data = await recommendationsService.getScholarshipRecommendations('local-user', result.merged, { forceRefresh });
     const scholarships = data.scholarships || [];
     const source = data.source || 'unknown';
     console.info(
@@ -340,6 +350,9 @@ exports.getScholarshipRecommendations = catchAsync(async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (err.statusCode === 429 || err.status === 429) {
+      return next(err);
+    }
     console.error('[ProfileController] Scholarship recommendations failed:', err.message);
     if (err.cause?.code === 'TimeoutError' || err.name === 'TimeoutError' || /timeout/i.test(err.message)) {
       return next(new AppError(

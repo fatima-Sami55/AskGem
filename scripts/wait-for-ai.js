@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Poll FastAPI /health until ollama + model are ready (max 60s).
+ * Poll FastAPI /health until ollama + model are ready (max 120s).
  * Used before starting Express in dev/prod launchers.
  */
 const { FASTAPI_URL } = require('./lib/config');
@@ -10,11 +10,15 @@ const MAX_WAIT_MS = 120_000;
 const POLL_MS = 500;
 
 async function pollFastApiHealth() {
-  const res = await fetch(`${FASTAPI_URL}/health`, {
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!res.ok) return null;
-  return res.json();
+  try {
+    const res = await fetch(`${FASTAPI_URL}/health`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 async function main() {
@@ -28,20 +32,18 @@ async function main() {
     process.exit(1);
   }
 
+  console.log('Waiting for FastAPI to become healthy...');
   const deadline = Date.now() + MAX_WAIT_MS;
   while (Date.now() < deadline) {
-    try {
-      const health = await pollFastApiHealth();
-      if (health?.ollama && health?.model) {
-        process.exit(0);
-      }
-    } catch {
-      // FastAPI not up yet — keep polling
+    const health = await pollFastApiHealth();
+    if (health?.ollama && health?.model) {
+      console.log('FastAPI is ready.');
+      process.exit(0);
     }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 
-  console.error('FastAPI did not become healthy. Check ai/.env and Ollama.');
+  console.error('FastAPI did not become healthy within 120s. Check ai/.env and Ollama.');
   process.exit(1);
 }
 

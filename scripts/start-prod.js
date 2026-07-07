@@ -52,7 +52,7 @@ async function main() {
   }
 
   console.log('Starting FastAPI (127.0.0.1:8000)...');
-  const aiChild = spawn(python, ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000'], {
+  const aiChild = spawn(python, ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000', '--no-access-log'], {
     cwd: aiDir,
     stdio: 'inherit',
     env: process.env,

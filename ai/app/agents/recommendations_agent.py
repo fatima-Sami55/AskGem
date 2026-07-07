@@ -8,13 +8,24 @@ import logging
 import os
 import re
 from datetime import datetime
-from urllib.parse import urlparse
 
 from app.services import ollama_service, search_service
+from app.services.university_sources import (
+    build_curated_universities,
+    dedupe_universities,
+    extract_ielts_min,
+    extract_min_gpa,
+    filter_official_search_results,
+    infer_tuition,
+    is_listicle_result,
+    is_official_university_url,
+    normalize_uni_name,
+    supplement_with_curated,
+)
 
 logger = logging.getLogger("recommendations_agent")
 
-LLM_NUM_PREDICT = int(os.getenv("RECOMMENDATIONS_NUM_PREDICT", "500"))
+LLM_NUM_PREDICT = int(os.getenv("RECOMMENDATIONS_NUM_PREDICT", "1200"))
 LLM_TIMEOUT_SEC = float(
     os.getenv("RECOMMENDATIONS_LLM_TIMEOUT")
     or os.getenv("OLLAMA_GENERATE_TIMEOUT", "600")
@@ -29,6 +40,42 @@ FALLBACK_DISCLAIMER = (
 )
 
 
+def _repair_truncated_json_array(cleaned: str) -> list | None:
+    """Best-effort repair when the model truncates mid-JSON."""
+    if not cleaned.startswith("["):
+        return None
+
+    last_object = cleaned.rfind("},")
+    if last_object != -1:
+        attempt = cleaned[: last_object + 1] + "]"
+        try:
+            parsed = json.loads(attempt)
+            if isinstance(parsed, list) and parsed:
+                logger.warning(
+                    "[RECOMMENDATIONS] Recovered %d items from truncated JSON array",
+                    len(parsed),
+                )
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    last_object = cleaned.rfind("}")
+    if last_object != -1:
+        attempt = cleaned[: last_object + 1] + "]"
+        try:
+            parsed = json.loads(attempt)
+            if isinstance(parsed, list) and parsed:
+                logger.warning(
+                    "[RECOMMENDATIONS] Recovered %d items from truncated JSON array",
+                    len(parsed),
+                )
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    return None
+
+
 def _parse_json_array(raw: str) -> list:
     cleaned = (raw or "").strip()
     if cleaned.startswith("```"):
@@ -40,14 +87,20 @@ def _parse_json_array(raw: str) -> list:
         cleaned = "\n".join(lines).strip()
     start = cleaned.find("[")
     end = cleaned.rfind("]")
-    if start != -1 and end != -1:
+    if start != -1 and end != -1 and end > start:
         cleaned = cleaned[start : end + 1]
+    elif start != -1:
+        cleaned = cleaned[start:]
+
     try:
         parsed = json.loads(cleaned)
         if not isinstance(parsed, list):
             raise ValueError("Expected JSON array")
         return parsed
     except (json.JSONDecodeError, ValueError) as exc:
+        repaired = _repair_truncated_json_array(cleaned)
+        if repaired is not None:
+            return repaired
         logger.error(
             "[RECOMMENDATIONS] JSON parse failed: %s | raw snippet: %s",
             exc,
@@ -101,70 +154,63 @@ def _format_search_context(search_results: list) -> str:
 
 def _extract_name_from_title(title: str) -> str:
     name = re.split(r"\||–|—|-", title)[0].strip()
+    name = re.sub(r"^\d+\.\s*", "", name)
     return name[:120] if name else title[:80]
 
 
-UNI_DOMAIN_RE = re.compile(r"\.(edu|ac\.|univ|uni-|tu-|ethz|tum|rwth)", re.I)
-UNI_TITLE_RE = re.compile(
-    r"\b(university|universität|institute of technology|technical university|college|TUM|ETH|RWTH)\b",
-    re.I,
-)
-
-
-def _looks_like_university(url: str, title: str) -> bool:
-    return bool(UNI_DOMAIN_RE.search(url or "") or UNI_TITLE_RE.search(title or ""))
-
-
 def _display_name_from_search_result(title: str, url: str) -> str:
-    if _looks_like_university(url, title):
-        return _extract_name_from_title(title)
-    host = urlparse(url).netloc.replace("www.", "") or "official site"
-    return f"Useful portal: {host}"
+    return _extract_name_from_title(title)
 
 
 def _build_university_fallback(search_results: list, profile: dict, country: str) -> list:
-    """Heuristic university list from Tavily results when LLM synthesis fails."""
+    """Build university cards from official search hits only."""
     universities = []
-    seen_urls = set()
+    seen_urls: set[str] = set()
     degree = profile["target_degree"]
     major = profile["major"]
 
-    for i, r in enumerate(search_results):
+    for r in search_results:
         url = (r.get("url") or "").strip()
         title = (r.get("title") or "").strip()
         snippet = (r.get("snippet") or r.get("content") or "").strip()
 
-        if not title or not url.startswith("http") or url in seen_urls:
+        if not title or not url.startswith("http"):
             continue
-        seen_urls.add(url)
+        if is_listicle_result(title, snippet):
+            continue
+        if not is_official_university_url(url):
+            continue
+        if url.lower() in seen_urls:
+            continue
+        seen_urls.add(url.lower())
 
-        snippet_lower = snippet.lower()
-        tuition = "Verify on official site"
-        if any(kw in snippet_lower for kw in ("tuition-free", "tuition free", "no tuition", "semester fee")):
-            tuition = "Low / tuition-free (verify on site)"
+        combined = f"{title} {snippet}"
+        min_gpa = extract_min_gpa(combined)
+        ielts_min = extract_ielts_min(combined)
+        tuition = infer_tuition(combined)
 
         universities.append({
             "name": _display_name_from_search_result(title, url),
             "country": country,
             "program": f"{degree} in {major}",
-            "minGpa": None,
-            "ieltsMin": None,
+            "minGpa": min_gpa,
+            "ieltsMin": ielts_min,
             "tuition": tuition,
             "whyItFits": (
                 snippet[:220] + ("..." if len(snippet) > 220 else "")
                 if snippet
-                else f"Relevant {major} option in {country} from live search — verify requirements on the official site."
+                else f"Official {major} program page in {country} — verify admission requirements on the site."
             ),
             "sourceUrl": url,
             "matchScore": None,
-            "verified": False,
+            "verified": True,
             "source": "search_fallback",
         })
         if len(universities) >= 8:
             break
 
     if universities:
-        logger.info("[RECOMMENDATIONS] Built %d university fallback items from search", len(universities))
+        logger.info("[RECOMMENDATIONS] Built %d official university fallback items from search", len(universities))
     return universities
 
 
@@ -259,11 +305,16 @@ def _normalize_university_item(item: dict, country: str) -> dict | None:
     name = str(
         item.get("name") or item.get("universityName") or item.get("university") or ""
     ).strip()
-    if not name:
+    if not name or name.lower().startswith("useful portal:"):
         return None
     url = str(item.get("sourceUrl") or item.get("url") or "").strip()
     if not url.startswith("http"):
         return None
+    if is_listicle_result(name, item.get("whyItFits") or ""):
+        return None
+    if not is_official_university_url(url):
+        return None
+
     score_raw = item.get("matchScore") if item.get("matchScore") is not None else item.get("score")
     match_score = None
     if score_raw is not None and score_raw != "":
@@ -271,17 +322,27 @@ def _normalize_university_item(item: dict, country: str) -> dict | None:
             match_score = min(100, max(0, int(score_raw)))
         except (TypeError, ValueError):
             match_score = None
+
+    why_text = str(item.get("whyItFits") or "Matches your academic profile.").strip()
+    min_gpa = item.get("minGpa")
+    if min_gpa in (None, ""):
+        min_gpa = extract_min_gpa(why_text)
+    ielts_min = item.get("ieltsMin")
+    if ielts_min in (None, ""):
+        ielts_min = extract_ielts_min(why_text)
+    tuition = item.get("tuition") or infer_tuition(why_text)
+
     return {
         "name": name,
         "country": str(item.get("country") or country).strip(),
         "program": item.get("program"),
-        "minGpa": item.get("minGpa"),
-        "ieltsMin": item.get("ieltsMin"),
-        "tuition": item.get("tuition"),
-        "whyItFits": str(item.get("whyItFits") or "Matches your academic profile.").strip(),
+        "minGpa": min_gpa,
+        "ieltsMin": ielts_min,
+        "tuition": tuition,
+        "whyItFits": why_text,
         "sourceUrl": url,
         "matchScore": match_score,
-        "verified": item.get("verified", True),
+        "verified": True,
         "source": item.get("source", "llm"),
     }
 
@@ -319,34 +380,8 @@ def _normalize_scholarship_item(item: dict, country: str) -> dict | None:
 
 
 def _generic_university_fallback(profile: dict, country: str) -> list:
-    """Last-resort portal links when search and LLM both fail."""
-    degree = profile["target_degree"]
-    major = profile["major"]
-    return [{
-        "name": "Useful portal: daad.de",
-        "country": country,
-        "program": f"{degree} in {major}",
-        "minGpa": None,
-        "ieltsMin": None,
-        "tuition": "Verify on official site",
-        "whyItFits": f"Official portal to explore accredited {major} programs in {country}.",
-        "sourceUrl": "https://www.daad.de/en/study-and-research-in-germany/",
-        "matchScore": None,
-        "verified": False,
-        "source": "portal_fallback",
-    }, {
-        "name": "Useful portal: study.eu",
-        "country": country,
-        "program": f"{degree} in {major}",
-        "minGpa": None,
-        "ieltsMin": None,
-        "tuition": "Verify on official site",
-        "whyItFits": f"Browse English-taught {degree} options in {country} for international students.",
-        "sourceUrl": "https://www.study.eu/",
-        "matchScore": None,
-        "verified": False,
-        "source": "portal_fallback",
-    }]
+    """Curated official universities when search and LLM both fail."""
+    return build_curated_universities(profile, country)
 
 
 def _generic_scholarship_fallback(profile: dict, country: str) -> list:
@@ -384,16 +419,16 @@ def _generic_scholarship_fallback(profile: dict, country: str) -> list:
 
 def _synthesize_with_llm(prompt: str, label: str) -> list | None:
     try:
-        logger.info("[RECOMMENDATIONS] Dispatching %s synthesis to Ollama (timeout=%ss)", label, LLM_TIMEOUT_SEC)
+        logger.debug("[recommendations] dispatch %s synthesis timeout=%ss", label, LLM_TIMEOUT_SEC)
         raw = ollama_service.generate(
             prompt,
             timeout=LLM_TIMEOUT_SEC,
             num_predict=LLM_NUM_PREDICT,
             task_name=f"recommendations_{label}",
         )
-        logger.info("[RECOMMENDATIONS] %s Ollama raw response (%d chars)", label, len(raw or ""))
+        logger.debug("[recommendations] %s raw response (%d chars)", label, len(raw or ""))
         items = _parse_json_array(raw)
-        logger.info("[RECOMMENDATIONS] %s parsed %d items from LLM JSON", label, len(items))
+        logger.info("[recommendations] %s done items=%d", label, len(items))
         return items
     except Exception as exc:
         logger.error("[RECOMMENDATIONS] %s LLM synthesis failed: %s", label, exc)
@@ -407,8 +442,14 @@ def get_university_recommendations(profile_dict: dict) -> dict:
     year = str(datetime.now().year)
     country = profile["countries"][0] if profile["countries"] else "Germany"
     queries = [
-        f"best {profile['target_degree']} {profile['major']} universities {country} international students {year}",
-        f"top {profile['major']} programs {country} admission GPA tuition {year}",
+        (
+            f"{profile['major']} {profile['target_degree']} program admission requirements "
+            f"site:tum.de OR site:tu-berlin.de OR site:rwth-aachen.de OR site:kit.edu {country} {year}"
+        ),
+        (
+            f"official {profile['major']} master program {country} "
+            f"site:uni-*.de OR site:tu-*.de international students english {year}"
+        ),
     ]
 
     logger.info("[RECOMMENDATIONS] Searching universities for %s in %s", profile["major"], country)
@@ -417,15 +458,23 @@ def get_university_recommendations(profile_dict: dict) -> dict:
     except Exception as exc:
         logger.error("[RECOMMENDATIONS] University search failed: %s", exc)
         search_results = []
-    search_context = _format_search_context(search_results)
+
+    official_results = filter_official_search_results(search_results)
+    context_results = official_results or search_results
+    search_context = _format_search_context(context_results)
 
     english = profile["english_test"]
     ielts = english.get("score") if isinstance(english, dict) else None
 
     prompt = (
-        "Output ONLY a JSON array of 5-6 universities. Each object: "
+        "Output ONLY a JSON array of 5-6 real universities. Each object: "
         "name, country, program, minGpa, ieltsMin, tuition, whyItFits (1 sentence), "
-        "sourceUrl, matchScore (0-100). Use ONLY URLs from search facts. No markdown.\n\n"
+        "sourceUrl, matchScore (0-100).\n"
+        "CRITICAL RULES:\n"
+        "- sourceUrl MUST be an official university domain (e.g. tum.de, uni-*.de, tu-*.de, .edu, .ac.uk).\n"
+        "- NEVER use blogs, rankings, or list articles (top 10, best universities, guides).\n"
+        "- Use ONLY URLs from the search facts below.\n"
+        "- No markdown.\n\n"
         f"Student: {profile['target_degree']} {profile['major']}, GPA {profile['cgpa'] or 'unknown'}, "
         f"countries {', '.join(profile['countries']) or country}, IELTS {ielts or 'N/A'}\n\n"
         f"Search facts:\n{search_context}\n"
@@ -441,15 +490,23 @@ def get_university_recommendations(profile_dict: dict) -> dict:
             if normalized:
                 universities.append(normalized)
 
-    if not universities and search_results:
-        logger.warning("[RECOMMENDATIONS] Using search fallback for universities (LLM empty or failed)")
-        universities = _build_university_fallback(search_results, profile, country)
+    if len(universities) < 4 and search_results:
+        logger.warning("[RECOMMENDATIONS] Using official search fallback for universities")
+        fallback_items = _build_university_fallback(search_results, profile, country)
+        existing_names = {normalize_uni_name(u["name"]) for u in universities}
+        for item in fallback_items:
+            if normalize_uni_name(item["name"]) in existing_names:
+                continue
+            universities.append(item)
+            existing_names.add(normalize_uni_name(item["name"]))
         used_fallback = True
 
-    if not universities:
-        logger.warning("[RECOMMENDATIONS] No university results — using generic portal fallback")
-        universities = _generic_university_fallback(profile, country)
+    if len(universities) < 4:
+        logger.warning("[RECOMMENDATIONS] Supplementing with curated official universities")
+        universities = supplement_with_curated(universities, profile, country, target_count=6)
         used_fallback = True
+
+    universities = dedupe_universities(universities)
 
     return {
         "universities": universities,

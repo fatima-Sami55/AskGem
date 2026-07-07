@@ -22,7 +22,10 @@ def _safe_university_items(raw_items: list) -> list[UniversityRecommendation]:
     items = []
     for u in raw_items or []:
         try:
-            items.append(UniversityRecommendation(**u))
+            payload = dict(u or {})
+            if payload.get("matchScore") is None:
+                payload.pop("matchScore", None)
+            items.append(UniversityRecommendation(**payload))
         except Exception as exc:
             logger.warning("[RECOMMENDATIONS ROUTER] Skipping invalid university item: %s", exc)
     return items
@@ -32,7 +35,10 @@ def _safe_scholarship_items(raw_items: list) -> list[ScholarshipRecommendation]:
     items = []
     for s in raw_items or []:
         try:
-            items.append(ScholarshipRecommendation(**s))
+            payload = dict(s or {})
+            if payload.get("matchScore") is None:
+                payload.pop("matchScore", None)
+            items.append(ScholarshipRecommendation(**payload))
         except Exception as exc:
             logger.warning("[RECOMMENDATIONS ROUTER] Skipping invalid scholarship item: %s", exc)
     return items

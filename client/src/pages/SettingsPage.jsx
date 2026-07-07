@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { useProfile } from '../context/ProfileContext';
 import { clearBookmarks } from '../services/bookmarks';
 import { invalidateRecommendationsCache } from '../services/recommendationsCache';
@@ -26,6 +25,7 @@ export default function SettingsPage() {
   const [health, setHealth] = useState(null);
   const [settings, setSettings] = useState(null);
   const [tavilyKey, setTavilyKey] = useState('');
+  const [showTavilyKey, setShowTavilyKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -39,7 +39,9 @@ export default function SettingsPage() {
         api.get('/settings'),
       ]);
       setHealth(healthRes.data);
-      setSettings(settingsRes.data?.data || null);
+      const settingsData = settingsRes.data?.data || null;
+      setSettings(settingsData);
+      setTavilyKey(settingsData?.tavilyApiKey || '');
     } catch (err) {
       setMessage({ type: 'error', text: 'Could not load settings.' });
     } finally {
@@ -56,11 +58,28 @@ export default function SettingsPage() {
     setMessage(null);
     try {
       await api.put('/settings/tavily', { tavilyApiKey: tavilyKey.trim() });
-      setTavilyKey('');
       await loadData();
       setMessage({ type: 'success', text: 'Tavily key saved. Restart the AI server if search does not update immediately.' });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to save key.' });
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const handleRemoveTavily = async () => {
+    const confirmed = window.confirm('Remove the saved Tavily API key?');
+    if (!confirmed) return;
+
+    setSavingKey(true);
+    setMessage(null);
+    try {
+      await api.put('/settings/tavily', { tavilyApiKey: '' });
+      setTavilyKey('');
+      await loadData();
+      setMessage({ type: 'success', text: 'Tavily key removed.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to remove key.' });
     } finally {
       setSavingKey(false);
     }
@@ -89,7 +108,7 @@ export default function SettingsPage() {
       await api.post('/settings/clear-all');
       clearBookmarks();
       invalidateRecommendationsCache();
-      await fetchProfile();
+      await fetchProfile({ silent: true });
       setMessage({ type: 'success', text: 'All local data cleared. Reloading…' });
       setTimeout(() => {
         window.location.href = '/';
@@ -114,7 +133,7 @@ export default function SettingsPage() {
           <ArrowLeft className="w-4 h-4 text-[#6366F1]" /> Back
         </button>
         <h1 className="text-base font-bold">Settings</h1>
-        <ThemeToggle />
+        <div className="w-12" />
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
@@ -156,23 +175,50 @@ export default function SettingsPage() {
             . You can also set <code className="text-[#818cf8]">TAVILY_API_KEY</code> in <code className="text-[#818cf8]">ai/.env</code>.
           </p>
           {settings?.tavilyConfigured && (
-            <p className="text-xs text-green-400">A Tavily key is configured ({settings.tavilyMasked}).</p>
+            <p className="text-xs text-green-400">
+              {settings.tavilySource === 'ai-env'
+                ? 'Loaded from ai/.env. Edit below and save to store in settings.'
+                : settings.tavilySource === 'server-env'
+                  ? 'Loaded from server/.env. Edit below and save to store in settings.'
+                  : 'A Tavily key is configured. Edit below to update it.'}
+            </p>
           )}
-          <input
-            type="password"
-            value={tavilyKey}
-            onChange={(e) => setTavilyKey(e.target.value)}
-            placeholder="tvly-..."
-            className="w-full bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#39B1D1]"
-          />
-          <button
-            type="button"
-            onClick={handleSaveTavily}
-            disabled={savingKey || !tavilyKey.trim()}
-            className="px-4 py-2 rounded-xl bg-[#39B1D1] hover:bg-[#2da0bf] disabled:opacity-50 text-sm font-semibold transition-colors"
-          >
-            {savingKey ? 'Saving…' : 'Save key'}
-          </button>
+          <div className="relative">
+            <input
+              type={showTavilyKey ? 'text' : 'password'}
+              value={tavilyKey}
+              onChange={(e) => setTavilyKey(e.target.value)}
+              placeholder="tvly-..."
+              className="w-full bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2.5 pr-20 text-sm focus:outline-none focus:border-[#39B1D1]"
+            />
+            <button
+              type="button"
+              onClick={() => setShowTavilyKey((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              {showTavilyKey ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSaveTavily}
+              disabled={savingKey || !tavilyKey.trim()}
+              className="px-4 py-2 rounded-xl bg-[#39B1D1] hover:bg-[#2da0bf] disabled:opacity-50 text-sm font-semibold transition-colors"
+            >
+              {savingKey ? 'Saving…' : settings?.tavilyConfigured ? 'Update key' : 'Save key'}
+            </button>
+            {settings?.tavilyConfigured && (
+              <button
+                type="button"
+                onClick={handleRemoveTavily}
+                disabled={savingKey}
+                className="px-4 py-2 rounded-xl border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-50 text-sm font-semibold transition-colors"
+              >
+                Remove key
+              </button>
+            )}
+          </div>
         </section>
 
         <section className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 space-y-3">

@@ -59,10 +59,10 @@ async function main() {
   const serverCmd = wrap('node scripts/run-server-dev.js');
   const clientCmd = wrap('node scripts/run-client-dev.js');
 
-  console.log('Starting full stack (FastAPI + Express + Vite)...\n');
-  console.log('  App:  http://127.0.0.1:5173');
-  console.log('  API:  http://127.0.0.1:5000');
-  console.log('  AI:   http://127.0.0.1:8000\n');
+  console.log('Starting full stack (FastAPI → Express → Vite)...\n');
+  console.log('  AI:   http://127.0.0.1:8000  (starts first)');
+  console.log('  API:  http://127.0.0.1:5000  (after AI is healthy)');
+  console.log('  App:  http://127.0.0.1:5173  (after API is healthy)\n');
 
   const proc = spawn(
     isWin ? 'npx.cmd' : 'npx',

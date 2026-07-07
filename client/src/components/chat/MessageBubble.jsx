@@ -85,7 +85,9 @@ export default function MessageBubble({ message, isThinking }) {
             {message.isStreaming ? (
               <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#E2E8F0' }}>
                 {cleanContent}
-                <span style={{ display: 'inline-block', width: '8px', height: '16px', marginLeft: '2px', backgroundColor: 'currentColor', verticalAlign: 'middle', animation: 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite' }} />
+                {cleanContent ? (
+                  <span style={{ display: 'inline-block', width: '8px', height: '16px', marginLeft: '2px', backgroundColor: 'currentColor', verticalAlign: 'middle', animation: 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite' }} />
+                ) : null}
               </div>
             ) : (
               <ReactMarkdown

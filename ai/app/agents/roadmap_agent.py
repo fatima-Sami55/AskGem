@@ -9,6 +9,7 @@ import re
 import time
 from datetime import datetime
 from app.services import ollama_service, search_service, prompt_service
+from app.services.roadmap_detailed_guide import build_detailed_roadmap
 
 logger = logging.getLogger("roadmap_agent")
 
@@ -17,6 +18,7 @@ ROADMAP_LLM_TIMEOUT = float(
     or os.getenv("OLLAMA_GENERATE_TIMEOUT", "600")
 )
 ROADMAP_NUM_PREDICT = int(os.getenv("ROADMAP_NUM_PREDICT", "1200"))
+ROADMAP_USE_LLM = os.getenv("ROADMAP_USE_LLM", "").lower() in ("1", "true", "yes")
 MAX_SEARCH_FACTS = int(os.getenv("ROADMAP_MAX_SEARCH_FACTS", "8"))
 MAX_OPPORTUNITIES = int(os.getenv("ROADMAP_MAX_OPPORTUNITIES", "6"))
 
@@ -225,7 +227,7 @@ def _personalized_gaps(profile: dict) -> list:
     """Profile-specific gap analysis when LLM output is missing or thin."""
     gaps = []
     english_test = profile.get("english_test") or {}
-    test_type = english_test.get("testType") or "IELTS"
+    test_type = _english_test_label(profile)
     test_score = english_test.get("score")
     cgpa = profile.get("cgpa")
     countries = profile.get("countries") or ["your target countries"]
@@ -278,7 +280,7 @@ def _personalized_recommendations(profile: dict) -> list:
     major = profile["major"]
     nationality = profile["nationality"]
     english_test = profile.get("english_test") or {}
-    test_type = english_test.get("testType") or "IELTS"
+    test_type = _english_test_label(profile)
 
     recs = [
         f"Shortlist 5–8 {target_degree} {major} programs across {country_str} and note each portal's deadlines.",
@@ -304,129 +306,100 @@ def _personalized_recommendations(profile: dict) -> list:
     return recs[:5]
 
 
-def _build_fallback_roadmap(profile: dict) -> dict:
-    """Deterministic personalized fallback when LLM synthesis fails."""
-    countries = profile.get("countries") or ["Germany"]
-    country_str = ", ".join(countries[:3])
-    major = profile["major"]
-    target_degree = profile["target_degree"]
-    nationality = profile["nationality"]
-    english_test = profile.get("english_test") or {}
-    test_type = english_test.get("testType") or "IELTS"
-    cgpa = profile.get("cgpa")
+def _english_test_label(profile: dict) -> str:
+    english = profile.get("english_test") or {}
+    test_type = english.get("testType") or "IELTS"
+    if test_type in ("None", "none", "", None):
+        return "IELTS or TOEFL"
+    return str(test_type)
 
-    aps_steps = []
-    if "Germany" in countries:
-        aps_steps.append("Initiate APS Certificate application for German university verification.")
-    blocked_steps = []
-    if "Germany" in countries:
-        blocked_steps.append("Open German blocked bank account (Fintiba/Expatrio) for visa proof.")
 
-    gpa_ref = f" (GPA {cgpa})" if cgpa is not None else ""
-
-    if target_degree == "PhD":
-        phases = [
-            {
-                "phase": 1,
-                "title": f"Research Proposal & Supervisor Outreach — {country_str}",
-                "timeline": "Months 1-3",
-                "description": (
-                    f"Draft a {major} research proposal and contact potential PhD supervisors "
-                    f"in {country_str}{gpa_ref}."
-                ),
-                "steps": [
-                    f"Identify 10–15 {major} research groups in {country_str} aligned with your interests.",
-                    "Draft a 2-page research proposal and updated academic CV.",
-                    f"Send personalized outreach emails to supervisors in {country_str} with proposal attached.",
-                ],
-            },
-            {
-                "phase": 2,
-                "title": f"Shortlist Labs & Secure Supervisor Match — {country_str}",
-                "timeline": "Months 4-5",
-                "description": f"Narrow universities in {country_str} and secure supervisor commitment.",
-                "steps": [
-                    f"Track responses from {country_str} supervisors and schedule interviews.",
-                    "Obtain formal supervisor invitation or acceptance letters.",
-                    f"Confirm program-specific deadlines on each {country_str} university portal.",
-                ],
-            },
-            {
-                "phase": 3,
-                "title": f"Applications & Funding — {nationality} {major} PhD",
-                "timeline": "Months 6-8",
-                "description": f"Submit formal applications and scholarship proposals across {country_str}.",
-                "steps": [
-                    f"Submit university portal applications in {country_str}.",
-                    f"Apply for DAAD, university scholarships, and country-specific funding for {nationality} students.",
-                    "Request reference letters from academic referees.",
-                ] + aps_steps,
-            },
-            {
-                "phase": 4,
-                "title": f"Visa & Pre-Departure — {country_str}",
-                "timeline": "Months 9-12",
-                "description": f"Complete visa, enrollment, and relocation steps for {country_str}.",
-                "steps": [
-                    "Receive formal PhD admission letter and funding confirmation.",
-                    f"Prepare visa documents for {nationality} students applying to {country_str}.",
-                    "Schedule embassy visa interview and arrange housing.",
-                ] + blocked_steps,
-            },
-        ]
-    else:
-        phases = [
-            {
-                "phase": 1,
-                "title": f"Profile Prep & {major} Program Research — {country_str}",
-                "timeline": "Months 1-2",
-                "description": f"Build your application profile for {target_degree} {major} in {country_str}{gpa_ref}.",
-                "steps": [
-                    f"Begin {test_type} preparation and register for a test date.",
-                    "Collect official transcripts and degree certificates.",
-                ] + aps_steps,
-            },
-            {
-                "phase": 2,
-                "title": f"Shortlist Universities & SOP — {country_str}",
-                "timeline": "Months 3-4",
-                "description": f"Select {target_degree} programs in {country_str} and draft application essays.",
-                "steps": [
-                    f"Shortlist 5–8 {major} programs across {country_str}.",
-                    f"Draft Statement of Purpose tailored to {country_str} universities.",
-                    "Request academic reference letters.",
-                ],
-            },
-            {
-                "phase": 3,
-                "title": f"Applications & Scholarships — {nationality} Student",
-                "timeline": "Months 5-8",
-                "description": f"Submit applications and funding requests for {country_str}.",
-                "steps": [
-                    f"Submit portal applications before {country_str} university deadlines.",
-                    f"Apply for scholarships available to {nationality} students in {country_str}.",
-                    "Prepare financial proof and bank statements.",
-                ],
-            },
-            {
-                "phase": 4,
-                "title": f"Visa & Departure — {country_str}",
-                "timeline": "Months 9-12",
-                "description": f"Secure admission and complete visa process for {country_str}.",
-                "steps": [
-                    "Receive university acceptance offer.",
-                    f"Book visa appointment for {nationality} students — {country_str}.",
-                ] + blocked_steps,
-            },
-        ]
-
-    return {
-        "title": f"{target_degree} {major} Roadmap — {country_str}",
-        "overallTimeline": "12-Month Personalized Preparation Plan",
-        "phases": phases,
-        "gaps": _personalized_gaps(profile),
-        "recommendations": _personalized_recommendations(profile),
+def _sanitize_json_text(raw: str) -> str:
+    """Normalize LLM output so json.loads can parse it."""
+    text = raw.strip()
+    smart_quotes = {
+        "\u201c": '"', "\u201d": '"', "\u2018": "'", "\u2019": "'",
+        "\u2013": "-", "\u2014": "-", "\u00a0": " ",
     }
+    for bad, good in smart_quotes.items():
+        text = text.replace(bad, good)
+    # Strip illegal control characters (keep whitespace)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
+    # Remove trailing commas before } or ]
+    text = re.sub(r",(\s*[}\]])", r"\1", text)
+    return text
+
+
+def _extract_json_object(raw: str) -> str:
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+    start_idx = cleaned.find("{")
+    end_idx = cleaned.rfind("}")
+    if start_idx != -1 and end_idx != -1:
+        cleaned = cleaned[start_idx:end_idx + 1]
+    return _sanitize_json_text(cleaned)
+
+
+def _parse_roadmap_json(raw: str) -> dict | None:
+    """Parse roadmap JSON with sanitization; returns None on failure."""
+    cleaned = _extract_json_object(raw)
+    try:
+        parsed = json.loads(cleaned)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError as exc:
+        logger.warning("[ROADMAP AGENT] JSON parse failed after sanitize: %s", exc)
+        return None
+
+
+def _merge_detailed_research_tasks(parsed: dict, profile: dict) -> dict:
+    """Ensure every phase includes expandable step-by-step details."""
+    detailed = build_detailed_roadmap(profile)
+    detailed_phases = {p.get("phase"): p for p in detailed.get("phases", [])}
+
+    merged_phases = []
+    for idx, phase in enumerate(parsed.get("phases") or []):
+        if not isinstance(phase, dict):
+            continue
+        phase_copy = dict(phase)
+        phase_num = phase_copy.get("phase") or idx + 1
+        detailed_phase = detailed_phases.get(phase_num) or detailed_phases.get(idx + 1)
+
+        if detailed_phase:
+            if detailed_phase.get("stepDetails"):
+                phase_copy["stepDetails"] = detailed_phase["stepDetails"]
+            if detailed_phase.get("steps"):
+                phase_copy["steps"] = detailed_phase["steps"]
+            if detailed_phase.get("description"):
+                phase_copy["description"] = detailed_phase["description"]
+            if detailed_phase.get("title"):
+                phase_copy["title"] = detailed_phase["title"]
+
+        merged_phases.append(phase_copy)
+
+    if not merged_phases:
+        merged_phases = detailed.get("phases", [])
+
+    parsed["phases"] = merged_phases
+    parsed["title"] = detailed.get("title") or parsed.get("title")
+    parsed["overallTimeline"] = (
+        parsed.get("overallTimeline")
+        or "12-month step-by-step preparation roadmap"
+    )
+    return parsed
+
+
+def _build_fallback_roadmap(profile: dict) -> dict:
+    """Detailed step-by-step fallback when LLM synthesis fails."""
+    parsed = build_detailed_roadmap(profile)
+    parsed["gaps"] = _personalized_gaps(profile)
+    parsed["recommendations"] = _personalized_recommendations(profile)
+    return parsed
 
 
 def _enrich_llm_output(parsed: dict, profile: dict) -> dict:
@@ -455,29 +428,33 @@ def _enrich_llm_output(parsed: dict, profile: dict) -> dict:
 
 
 def generate_personalized_roadmap(profile_dict: dict) -> dict:
-    """Coordinates search fact collection and LLM prompt assembly to synthesize a structured roadmap."""
-    logger.info("📋 [ROADMAP AGENT] Starting roadmap generation for profile...")
-
+    """Build a structured roadmap with pre-researched step details and live search opportunities."""
+    logger.info("[roadmap] start")
     profile = _normalize_profile(profile_dict)
-    countries = profile["countries"]
 
     queries = _build_search_queries(profile)
-    logger.info(f"🔍 [ROADMAP AGENT] Step 1/3: Running context searches for queries: {queries}")
+    logger.debug("[roadmap] search queries=%s", queries)
     search_results = search_service.search_for_context(queries)
+    opportunities = _build_opportunities_from_search(search_results, profile)
+
+    if not ROADMAP_USE_LLM:
+        logger.debug("[roadmap] using curated guide (ROADMAP_USE_LLM off)")
+        parsed_response = _build_fallback_roadmap(profile)
+        parsed_response["opportunities"] = opportunities
+        logger.info("[roadmap] done phases=%s", len(parsed_response.get("phases") or []))
+        return parsed_response
 
     facts_list = []
     for i, r in enumerate(search_results[:MAX_SEARCH_FACTS], 1):
         facts_list.append(f"[{i}] {r['title']}\nURL: {r['url']}\n{r['snippet']}")
     search_context = "\n\n".join(facts_list) if facts_list else "No real-time facts found."
-
-    opportunities = _build_opportunities_from_search(search_results, profile)
     phase_skeleton = _build_phase_skeleton(profile)
 
     system_prompt, user_prompt = prompt_service.build_roadmap_prompt(
         profile, search_context, phase_skeleton
     )
 
-    logger.info("🚀 [ROADMAP AGENT] Step 2/3: Dispatching roadmap prompt to Ollama...")
+    logger.debug("[roadmap] LLM dispatch")
     start_time = time.time()
 
     parsed_response = None
@@ -489,34 +466,22 @@ def generate_personalized_roadmap(profile_dict: dict) -> dict:
             task_name="roadmap",
             use_lock=True,
         )
-        logger.info(f"🎉 [ROADMAP AGENT] Ollama response received in {time.time() - start_time:.2f}s")
-
-        cleaned_res = raw_res.strip()
-        if cleaned_res.startswith("```"):
-            lines = cleaned_res.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
-            cleaned_res = "\n".join(lines).strip()
-
-        start_idx = cleaned_res.find("{")
-        end_idx = cleaned_res.rfind("}")
-        if start_idx != -1 and end_idx != -1:
-            cleaned_res = cleaned_res[start_idx:end_idx + 1]
-
-        parsed_response = json.loads(cleaned_res)
-        logger.info("✅ [ROADMAP AGENT] Successfully parsed LLM roadmap JSON.")
+        logger.debug("[roadmap] LLM response in %.2fs", time.time() - start_time)
+        parsed_response = _parse_roadmap_json(raw_res)
+        if parsed_response:
+            logger.debug("[roadmap] parsed LLM JSON")
     except Exception as e:
-        logger.error(f"❌ [ROADMAP AGENT] Failed to generate or parse LLM roadmap JSON: {str(e)}")
+        logger.error("[roadmap] LLM failed: %s", str(e))
 
     if not parsed_response or not isinstance(parsed_response, dict) or "phases" not in parsed_response:
-        logger.warning("⚠️ [ROADMAP AGENT] Utilizing fallback structured template.")
+        logger.warning("[roadmap] using curated fallback guide")
         parsed_response = _build_fallback_roadmap(profile)
     else:
         parsed_response = _enrich_llm_output(parsed_response, profile)
 
     parsed_response["opportunities"] = opportunities
     parsed_response["phases"] = _normalize_phases(parsed_response.get("phases", []))
+    parsed_response = _merge_detailed_research_tasks(parsed_response, profile)
 
+    logger.info("[roadmap] done phases=%s", len(parsed_response.get("phases") or []))
     return parsed_response

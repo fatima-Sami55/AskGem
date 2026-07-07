@@ -15,15 +15,22 @@ const app = express();
 const HOST = '127.0.0.1';
 const PORT = process.env.PORT || 5000;
 const isProduction = process.env.NODE_ENV === 'production';
+const AI_HEALTH_TIMEOUT_MS = Number(process.env.AI_HEALTH_TIMEOUT_MS) || 20000;
 
 app.use(cors({
-  origin: process.env.CLIENT_URL || (isProduction ? `http://${HOST}:${PORT}` : 'http://127.0.0.1:5173'),
+  origin: [
+    process.env.CLIENT_URL,
+    'http://127.0.0.1:5173',
+    'http://localhost:5173',
+  ].filter(Boolean),
   credentials: true,
 }));
 app.use(express.json({ limit: '100kb', strict: false }));
 
 if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
+  app.use(morgan('dev', {
+    skip: (req) => req.path === '/api/v1/ai/queue' || req.path === '/api/v1/health',
+  }));
 }
 
 const chatRoutes = require('./routes/chatRoutes');
@@ -43,7 +50,7 @@ app.get('/api/v1/health', async (req, res) => {
 
   try {
     const aiResponse = await fetch(`${getAiServerUrl()}/health`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(AI_HEALTH_TIMEOUT_MS),
     });
     if (aiResponse.ok) {
       const fastApiHealth = await aiResponse.json();
@@ -142,8 +149,12 @@ if (require.main === module) {
   if (tavilyKey) {
     process.env.TAVILY_API_KEY = tavilyKey;
   }
-  app.listen(PORT, HOST, () => {
+  const httpServer = app.listen(PORT, HOST, () => {
     console.log(`✅ Server running on http://${HOST}:${PORT}${isProduction ? ' (production)' : ''}`);
+  });
+  httpServer.on('error', (err) => {
+    console.error(`[server] Failed to bind ${HOST}:${PORT}:`, err.message);
+    process.exit(1);
   });
 }
 

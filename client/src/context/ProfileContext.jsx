@@ -9,8 +9,8 @@ export function ProfileProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchProfile = useCallback(async () => {
-    setLoading(true);
+  const fetchProfile = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await api.get('/profile');
@@ -20,7 +20,7 @@ export function ProfileProvider({ children }) {
       setError(msg);
       setUser(null);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 

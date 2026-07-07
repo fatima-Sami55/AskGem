@@ -3,8 +3,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useProfile } from '../context/ProfileContext';
-
+import { useChat } from '../context/ChatContext';
 import api from '../services/api';
+import AiBusyBanner from '../components/features/AiBusyBanner';
 
 import {
   fetchRecommendationsCached,
@@ -38,6 +39,7 @@ const LOADING_STAGES = [
 export default function ScholarshipsPage() {
 
   const { user } = useProfile();
+  const { aiQueueBlocksSend, aiQueue } = useChat();
 
   const navigate = useNavigate();
 
@@ -80,8 +82,8 @@ export default function ScholarshipsPage() {
   const cacheKey = getRecommendationsCacheKey('scholarships');
 
   useEffect(() => {
-    if (!profileReady) {
-      setLoading(false);
+    if (!profileReady || aiQueueBlocksSend) {
+      if (!profileReady) setLoading(false);
       return undefined;
     }
 
@@ -106,7 +108,10 @@ export default function ScholarshipsPage() {
       try {
         const res = await fetchRecommendationsCached(
           cacheKey,
-          () => api.get('/profile/recommendations/scholarships', { signal: controller.signal }),
+          () => api.get('/profile/recommendations/scholarships', {
+            signal: controller.signal,
+            params: forceRefresh ? { refresh: 'true' } : undefined,
+          }),
           { forceRefresh },
         );
 
@@ -134,7 +139,7 @@ export default function ScholarshipsPage() {
       stageTimers.forEach(clearTimeout);
       controller.abort();
     };
-  }, [profileReady, user?.profile?.gpa, user?.profile?.preferredCountries, user?.profile?.targetDegree, refreshKey, cacheKey]);
+  }, [profileReady, aiQueueBlocksSend, user?.profile?.gpa, user?.profile?.preferredCountries, user?.profile?.targetDegree, refreshKey, cacheKey]);
 
   const handleRefresh = useCallback(() => {
     setFromCache(false);
@@ -189,6 +194,19 @@ export default function ScholarshipsPage() {
     );
   }
 
+  if (profileReady && aiQueueBlocksSend && scholarships.length === 0 && !fromCache) {
+    return (
+      <div className="min-h-screen bg-[#0F172A] text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full space-y-4">
+          <AiBusyBanner currentTask={aiQueue?.current_task} />
+          <p className="text-sm text-slate-400 text-center">
+            Scholarship recommendations will load automatically when Peri is free.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <MascotLoader message={LOADING_STAGES[loadingStage]?.message || LOADING_STAGES[0].message} />
@@ -239,13 +257,18 @@ export default function ScholarshipsPage() {
           </p>
         </div>
 
+        {aiQueueBlocksSend && (
+          <AiBusyBanner currentTask={aiQueue?.current_task} />
+        )}
+
         {fromCache && cacheAgeMin != null && (
           <div className="flex items-center justify-between gap-3 bg-[#1E293B]/80 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-400">
             <span>Last updated {cacheAgeMin === 0 ? 'just now' : `${cacheAgeMin} min ago`}</span>
             <button
               type="button"
               onClick={handleRefresh}
-              className="inline-flex items-center gap-1.5 text-[#818cf8] hover:text-white font-semibold transition-colors"
+              disabled={aiQueueBlocksSend}
+              className="inline-flex items-center gap-1.5 text-[#818cf8] hover:text-white font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>

@@ -279,12 +279,24 @@ textarea:focus:not(.pill-textarea) {
 /* DISABLED STATE STANDARD */
 button:disabled,
 input:disabled,
-textarea:disabled,
+textarea:disabled:not(.pill-textarea),
 select:disabled {
   background: var(--color-slate-400) !important;
   color: rgba(148, 163, 184, 0.6) !important;
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+textarea.pill-textarea:disabled,
+textarea.pill-textarea[readonly] {
+  background: transparent !important;
+  color: var(--text-main) !important;
+  opacity: 0.9 !important;
+  cursor: not-allowed;
+}
+
+.pill-input-wrapper--busy {
+  opacity: 0.95;
 }
 
 /* PREFERS REDUCED MOTION */

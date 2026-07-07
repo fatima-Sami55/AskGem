@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const dotenv = require('dotenv');
 const {
   getUser,
   updateUser,
@@ -14,6 +15,7 @@ const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+const AI_ENV_PATH = path.join(__dirname, '..', '..', 'ai', '.env');
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -43,14 +45,35 @@ function maskKey(key) {
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
 }
 
+function readAiEnvTavilyKey() {
+  try {
+    if (!fs.existsSync(AI_ENV_PATH)) return '';
+    const parsed = dotenv.parse(fs.readFileSync(AI_ENV_PATH));
+    return (parsed.TAVILY_API_KEY || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function getTavilyKeySource() {
+  const file = readSettingsFile();
+  if (file.tavilyApiKey) return 'settings';
+  if ((process.env.TAVILY_API_KEY || '').trim()) return 'server-env';
+  if (readAiEnvTavilyKey()) return 'ai-env';
+  return null;
+}
+
 function getEffectiveTavilyKey() {
   const file = readSettingsFile();
-  return (file.tavilyApiKey || process.env.TAVILY_API_KEY || '').trim();
+  return (
+    (file.tavilyApiKey || process.env.TAVILY_API_KEY || readAiEnvTavilyKey() || '')
+      .trim()
+  );
 }
 
 exports.getSettings = catchAsync(async (req, res) => {
-  const file = readSettingsFile();
   const tavilyKey = getEffectiveTavilyKey();
+  const tavilySource = getTavilyKeySource();
 
   res.status(200).json({
     status: 'success',
@@ -61,6 +84,8 @@ exports.getSettings = catchAsync(async (req, res) => {
       ollamaModel: process.env.OLLAMA_MODEL || 'gemma3:4b',
       tavilyConfigured: Boolean(tavilyKey),
       tavilyMasked: tavilyKey ? maskKey(tavilyKey) : null,
+      tavilyApiKey: tavilyKey || '',
+      tavilySource,
     },
   });
 });
@@ -92,7 +117,7 @@ exports.updateTavilyKey = catchAsync(async (req, res) => {
   res.status(200).json({
     status: 'success',
     message: key ? 'Tavily key saved.' : 'Tavily key removed.',
-    data: { tavilyConfigured: Boolean(key), tavilyMasked: key ? maskKey(key) : null },
+    data: { tavilyConfigured: Boolean(key), tavilyMasked: key ? maskKey(key) : null, tavilyApiKey: key || '' },
   });
 });
 

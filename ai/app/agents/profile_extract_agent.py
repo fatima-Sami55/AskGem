@@ -107,7 +107,7 @@ def validate_profile_extraction(
 ) -> dict:
     """Run LLM validation on a regex draft and return structured field results."""
     prompt = build_profile_extract_prompt(message, current_context or {}, regex_draft or {})
-    logger.info("[PROFILE EXTRACT] Dispatching validation prompt to Ollama...")
+    logger.debug("[profile_extract] validation prompt to Ollama")
 
     try:
         raw = ollama_service.generate(prompt, task_name="profile_extract")

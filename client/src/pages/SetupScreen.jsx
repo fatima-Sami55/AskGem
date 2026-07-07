@@ -1,38 +1,75 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../services/api';
+
+const POLL_MS = 3000;
+const HEALTH_TIMEOUT_MS = 8000;
+
+function isBackendUnreachable(err) {
+  const msg = err?.message || '';
+  return (
+    err?.code === 'ERR_NETWORK'
+    || err?.code === 'ECONNREFUSED'
+    || /network error/i.test(msg)
+    || /ECONNREFUSED/i.test(msg)
+  );
+}
 
 export default function SetupScreen({ onReady }) {
   const [checking, setChecking] = useState(true);
   const [health, setHealth] = useState(null);
   const [error, setError] = useState(null);
+  const [attempts, setAttempts] = useState(0);
+  const readyRef = useRef(false);
 
-  const checkHealth = useCallback(async () => {
-    setChecking(true);
+  const checkHealth = useCallback(async (silent = false) => {
+    if (!silent) setChecking(true);
     setError(null);
     try {
-      const res = await api.get('/health');
+      const res = await api.get('/health', {
+        validateStatus: (status) => status < 600,
+        timeout: HEALTH_TIMEOUT_MS,
+      });
       setHealth(res.data);
-      const ai = res.data?.ai || {};
-      const coreReady = ai.serverReachable && ai.ollama && ai.model;
-      if (coreReady) {
+      setAttempts((n) => n + 1);
+
+  const ai = res.data?.ai || {};
+      const coreReady = res.data?.db && ai.serverReachable && ai.ollama && ai.model;
+      if (coreReady && !readyRef.current) {
+        readyRef.current = true;
         onReady?.();
       }
     } catch (err) {
-      setHealth(err.response?.data || null);
-      setError('Could not reach the AskPeri backend. Make sure all services are running.');
+      setAttempts((n) => n + 1);
+      if (err.response?.data) {
+        setHealth(err.response.data);
+      }
+      if (isBackendUnreachable(err)) {
+        setError('Express backend (:5000) is not running yet. Wait for npm run dev to finish starting all services, then retry.');
+      } else if (err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '')) {
+        setError('Backend health check timed out. Services may still be starting — try again in a few seconds.');
+      } else {
+        setError('Could not reach the AskPeri backend. Make sure all services are running.');
+      }
     } finally {
-      setChecking(false);
+      if (!silent) setChecking(false);
     }
   }, [onReady]);
 
   useEffect(() => {
     checkHealth();
+    const id = setInterval(() => {
+      if (!readyRef.current) checkHealth(true);
+    }, POLL_MS);
+    return () => clearInterval(id);
   }, [checkHealth]);
 
   const ai = health?.ai || {};
   const serverDown = ai.serverReachable === false;
   const modelMissing = ai.serverReachable && ai.ollama && !ai.model;
+  const ollamaDown = ai.serverReachable && !ai.ollama;
   const chromaWarn = ai.serverReachable && ai.ollama && ai.model && !ai.chroma;
+  const backendUnreachable = Boolean(error) && !health;
+  const startingUp = attempts > 0 && (serverDown || backendUnreachable) && attempts < 40;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0f172a] text-white p-6">
@@ -52,6 +89,7 @@ export default function SetupScreen({ onReady }) {
                 <a href="https://ollama.com" target="_blank" rel="noreferrer" className="text-[#39B1D1] underline">
                   ollama.com
                 </a>
+                {' '}— then run <code className="font-mono text-xs">ollama serve</code> if it is not already running
               </p>
             </div>
           </li>
@@ -71,7 +109,7 @@ export default function SetupScreen({ onReady }) {
               <code className="block mt-1 px-3 py-2 rounded bg-black/30 text-slate-300 font-mono text-xs">
                 npm run dev
               </code>
-              <p className="text-slate-500 text-xs mt-1">From the repo root — not server/ alone</p>
+              <p className="text-slate-500 text-xs mt-1">From the repo root — starts FastAPI (:8000), Express (:5000), and Vite (:5173)</p>
             </div>
           </li>
         </ol>
@@ -86,11 +124,22 @@ export default function SetupScreen({ onReady }) {
           </div>
         )}
 
-        {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-        {serverDown && (
-          <p className="text-red-400 text-sm mb-4">
-            AI server not running — run <code className="font-mono">npm run dev</code> from repo root
-            {ai.serverError ? ` (${ai.serverError})` : ''}
+        {error && !startingUp && <p className="text-red-400 text-sm mb-4">{error}</p>}
+        {startingUp && (
+          <p className="text-slate-400 text-sm mb-4">
+            Services are starting… Express waits for FastAPI, then boots on :5000 (attempt {attempts}).
+          </p>
+        )}
+        {serverDown && !startingUp && !backendUnreachable && (
+          <p className="text-amber-400 text-sm mb-4">
+            Express is up but cannot reach FastAPI on port 8000
+            {ai.serverError ? ` (${ai.serverError})` : ''}.
+            Ensure <code className="font-mono">AI_SERVER_URL=http://127.0.0.1:8000</code> in server/.env, then retry.
+          </p>
+        )}
+        {ollamaDown && (
+          <p className="text-amber-400 text-sm mb-4">
+            FastAPI is up but Ollama is not responding. Open a terminal and run <code className="font-mono">ollama serve</code>, then retry.
           </p>
         )}
         {modelMissing && (
@@ -100,17 +149,17 @@ export default function SetupScreen({ onReady }) {
         )}
         {chromaWarn && (
           <p className="text-amber-400 text-sm mb-4">
-            ChromaDB is not writable — memory features may fail. Check CHROMA_PATH in ai/.env.
+            ChromaDB is not writable — chat memory may not persist. Check folder permissions for <code className="font-mono">data/chroma_data</code>.
           </p>
         )}
 
         <button
           type="button"
-          onClick={checkHealth}
+          onClick={() => checkHealth()}
           disabled={checking}
           className="w-full py-3 rounded-xl bg-[#39B1D1] hover:bg-[#2da0bf] disabled:opacity-50 font-semibold transition-colors"
         >
-          {checking ? 'Checking…' : 'Retry'}
+          {checking ? 'Checking…' : 'Retry now'}
         </button>
       </div>
     </div>
@@ -118,7 +167,6 @@ export default function SetupScreen({ onReady }) {
 }
 
 function StatusRow({ label, ok, warnOnly = false }) {
-  const showOk = ok || (warnOnly && ok === false);
   return (
     <div className="flex items-center justify-between">
       <span className="text-slate-300">{label}</span>

@@ -70,12 +70,26 @@ class RoadmapRequest(BaseModel):
     session_id: Optional[str] = None
     profile: Optional[StudentProfile] = None
 
+class RoadmapStepDetail(BaseModel):
+    title: str
+    summary: Optional[str] = None
+    details: List[str] = Field(default_factory=list)
+    url: Optional[str] = None
+
+class RoadmapResearchTask(BaseModel):
+    title: str
+    url: str
+    fieldsToCollect: List[str] = Field(default_factory=list)
+    notes: Optional[str] = None
+
 class RoadmapPhase(BaseModel):
     phase: int
     title: str
     timeline: str
     description: Optional[str] = None
     steps: List[str] = Field(default_factory=list)
+    stepDetails: List[RoadmapStepDetail] = Field(default_factory=list)
+    tasks: List[RoadmapResearchTask] = Field(default_factory=list)
 
 class RoadmapOpportunity(BaseModel):
     name: str
@@ -124,7 +138,8 @@ class UniversityRecommendation(BaseModel):
     tuition: Optional[str] = None
     whyItFits: str
     sourceUrl: str
-    matchScore: int = Field(default=70, ge=0, le=100)
+    matchScore: Optional[int] = Field(default=None, ge=0, le=100)
+    verified: Optional[bool] = True
 
 class ScholarshipRecommendation(BaseModel):
     name: str
@@ -136,7 +151,8 @@ class ScholarshipRecommendation(BaseModel):
     amount: Optional[str] = None
     whyItFits: str
     sourceUrl: str
-    matchScore: int = Field(default=70, ge=0, le=100)
+    matchScore: Optional[int] = Field(default=None, ge=0, le=100)
+    verified: Optional[bool] = True
 
 class UniversityRecommendationsResponse(BaseModel):
     universities: List[UniversityRecommendation] = Field(default_factory=list)

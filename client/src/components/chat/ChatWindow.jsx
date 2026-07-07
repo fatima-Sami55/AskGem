@@ -6,13 +6,14 @@ import { useMascot } from '../../context/MascotContext';
 import InteractiveMascot from '../mascot/InteractiveMascot';
 import api from '../../services/api';
 import MessageBubble from './MessageBubble';
-import { Send, ArrowRight, Compass } from 'lucide-react';
+import { getAiQueueBannerMessage, isChatPipelineBusy } from '../../utils/aiQueue';
+import AiBusyBanner from '../features/AiBusyBanner';
+import { Send } from 'lucide-react';
 
 export default function ChatWindow() {
   const {
     messages, isThinking, isStreaming, sendMessage, activeSessionId, isClosed,
-    scoreToast, createSession, generateRoadmap, isGeneratingRoadmap,
-    aiQueue, aiQueueBlocksSend,
+    scoreToast, aiQueue, aiQueueBlocksSend,
   } = useChat();
   const { user } = useProfile();
   const { triggerMascotAction, resetInactivityTimer } = useMascot();
@@ -23,8 +24,6 @@ export default function ChatWindow() {
   const [serverName, setServerName] = useState(null); // fresh name from server (not stale JWT)
 
   const [isFocused, setIsFocused] = useState(false);
-  const [showLimitTooltip, setShowLimitTooltip] = useState(false);
-  const tooltipTimerRef = useRef(null);
 
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
@@ -39,23 +38,17 @@ export default function ChatWindow() {
   const targetCountry = fullProfile?.preferredCountries?.[0] || null;
   const targetDegree = fullProfile?.targetDegree || null;
   const major = fullProfile?.major || null;
-  const inputDisabled = !activeSessionId || isClosed || isThinking || isStreaming || aiQueueBlocksSend;
+  const inputDisabled = isThinking || isStreaming || aiQueueBlocksSend;
+  const periIsWorking = isThinking || isStreaming || isChatPipelineBusy(aiQueue);
+  const hasStreamingModelBubble = messages.some(
+    (m) => m.role === 'model' && m.isStreaming && String(m.content || '').trim(),
+  );
+  const showThinkingIndicator = periIsWorking && !hasStreamingModelBubble;
 
-  const queueBannerMessage = (() => {
-    const task = aiQueue?.current_task;
-    if (task === 'roadmap') return 'Peri is busy generating your roadmap — please wait.';
-    if (task?.startsWith('recommendations')) return 'Peri is busy finding recommendations — please wait.';
-    return 'Peri is busy — please wait.';
-  })();
-
-  const handleGenerateRoadmap = async () => {
-    if (!activeSessionId || isGeneratingRoadmap) return;
-    try {
-      await generateRoadmap(activeSessionId);
-    } catch (err) {
-      console.error('Roadmap generation failed:', err);
-    }
-  };
+  const queueBannerMessage = getAiQueueBannerMessage(aiQueue?.current_task);
+  const inputPlaceholder = periIsWorking
+    ? 'Peri is thinking — hang tight…'
+    : 'Ask Peri anything — universities, scholarships, visas, roadmap...';
 
   // One-time wave on welcome screen first load
   const hasMountedWave = useRef(false);
@@ -76,19 +69,13 @@ export default function ChatWindow() {
   }, [userName, messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    return () => {
-      if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isThinking]);
+  }, [messages, showThinkingIndicator]);
 
 
 
   useEffect(() => {
-    if (isThinking) {
+    if (periIsWorking && !prevThinkingRef.current) {
       triggerMascotAction({
         type: 'thinking',
         mood: 'curious',
@@ -97,7 +84,7 @@ export default function ChatWindow() {
         priority: 'HIGH',
         speech: 'Hmm, let me look that up for you...',
       });
-    } else if (prevThinkingRef.current && messages.length >= 2) {
+    } else if (!periIsWorking && prevThinkingRef.current && messages.length >= 2) {
       const last = messages[messages.length - 1];
       const prev = messages[messages.length - 2];
       if (prev.role === 'user' && last.role === 'model' && !last.isStreaming && !last.isError) {
@@ -110,8 +97,8 @@ export default function ChatWindow() {
         });
       }
     }
-    prevThinkingRef.current = isThinking;
-  }, [isThinking, triggerMascotAction, messages]);
+    prevThinkingRef.current = periIsWorking;
+  }, [periIsWorking, triggerMascotAction, messages]);
 
   useEffect(() => {
     if (scoreToast) {
@@ -146,7 +133,6 @@ export default function ChatWindow() {
     if (!text || inputDisabled) return;
     resetInactivityTimer();
     setInput('');
-    setShowLimitTooltip(false);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     await sendMessage(text);
     textareaRef.current?.focus();
@@ -161,18 +147,9 @@ export default function ChatWindow() {
 
   const handleTextChange = (e) => {
     const val = e.target.value;
-    if (val.length >= 300) {
-      setShowLimitTooltip(true);
-      if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
-      tooltipTimerRef.current = setTimeout(() => {
-        setShowLimitTooltip(false);
-      }, 2000);
-    } else if (showLimitTooltip && val.length < 300) {
-      setShowLimitTooltip(false);
-    }
     setInput(val);
     e.target.style.height = 'auto';
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
   };
 
   const handleCardClick = async (text) => {
@@ -183,8 +160,8 @@ export default function ChatWindow() {
   };
 
   const getCounterColor = (count) => {
-    if (count > 270) return '#EF4444';
-    if (count > 200) return '#FBBF24';
+    if (count > 3600) return '#EF4444';
+    if (count > 3000) return '#FBBF24';
     return '#64748B';
   };
 
@@ -211,7 +188,7 @@ export default function ChatWindow() {
     <div className="flex-1 flex flex-col h-full bg-[#0F172A] relative overflow-hidden">
       {/* Scrollable message thread area */}
       <div className="flex-1 overflow-y-auto px-4 md:px-8" style={{ display:'flex', flexDirection:'column' }}>
-        {messages.length === 0 ? (
+        {messages.length === 0 && !periIsWorking ? (
           <div className="flex flex-col items-center justify-center min-h-full py-4 px-4 animate-fade-in">
 
 
@@ -270,31 +247,10 @@ export default function ChatWindow() {
         ) : (
           <div className="max-w-3xl mx-auto py-6 space-y-6">
             {messages.map((msg, idx) => (
-              msg.isRoadmapPrompt ? (
-                <div key={msg.timestamp || `roadmap-prompt-${idx}`} className="flex justify-center my-3">
-                  <div className="w-full max-w-md p-5 rounded-2xl bg-gradient-to-b from-[#1E293B] to-[#0F172A] border-2 border-[#6366F1]/40 shadow-lg shadow-[#6366F1]/10 space-y-4 text-center">
-                    <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#6366F1]/20 border border-[#6366F1]/40 mx-auto">
-                      <Compass className="w-5 h-5 text-[#818cf8]" />
-                    </div>
-                    <p className="text-base font-bold text-white">Your profile looks complete!</p>
-                    <p className="text-xs text-slate-400 leading-relaxed">Generate a personalized study-abroad roadmap when you are ready.</p>
-                    <button
-                      type="button"
-                      onClick={handleGenerateRoadmap}
-                      disabled={isGeneratingRoadmap || aiQueueBlocksSend}
-                      className="w-full py-3 px-4 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#6366F1] to-[#39B1D1] hover:from-[#5558e3] hover:to-[#2da0bf] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-[#6366F1]/25 flex items-center justify-center gap-2"
-                    >
-                      <Compass className="w-4 h-4" />
-                      {isGeneratingRoadmap ? 'Generating roadmap…' : 'Generate Roadmap'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <MessageBubble key={msg._id || msg.timestamp || idx} message={msg} />
-              )
+              <MessageBubble key={msg.id || msg._id || idx} message={msg} />
             ))}
 
-            {isThinking && <MessageBubble isThinking={true} />}
+            {showThinkingIndicator && <MessageBubble isThinking={true} />}
             <div ref={bottomRef} />
           </div>
         )}
@@ -302,7 +258,7 @@ export default function ChatWindow() {
 
       {/* Floating pill input */}
       <div className="floating-input-container">
-        {activeSessionId && messages.length === 0 && (
+        {messages.length === 0 && (
           <div className="flex items-center justify-center gap-2 overflow-x-auto pb-2 mb-1 max-w-full no-scrollbar animate-fade-in-up" style={{ animationDelay: '600ms' }}>
             {[
               { label: '🎓 Universities', query: 'Show me universities that match my profile' },
@@ -322,78 +278,70 @@ export default function ChatWindow() {
           </div>
         )}
 
-        {aiQueueBlocksSend && (
-          <div className="mb-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 text-center font-medium">
-            {queueBannerMessage}
-          </div>
+        {periIsWorking && (
+          <AiBusyBanner
+            className="mb-2"
+            currentTask={aiQueue?.current_task}
+            statusMessage={queueBannerMessage}
+            showDots={false}
+          />
         )}
 
-        {showLimitTooltip && (
-          <div className="mb-1.5 px-3 py-1 bg-[#EF4444] text-white rounded-md text-xs font-medium shadow-md animate-fade-in-up transition-all">
-            Maximum 300 characters reached
-          </div>
-        )}
-
-        {isClosed ? (
-          <div className="w-full max-w-[768px] flex flex-col items-center justify-center gap-3 py-4 px-4 bg-slate-900/60 rounded-2xl border border-white/5 shadow-2xl backdrop-blur-md animate-fade-in-up">
-            <p className="text-sm font-semibold text-slate-300 text-center flex items-center gap-1.5 justify-center">
-              🎉 This session is closed. Your personalized education roadmap has been generated!
-            </p>
+        {isClosed && (
+          <div className="mb-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200 text-center font-medium flex items-center justify-center gap-2 flex-wrap">
+            <span>Your roadmap is ready — keep chatting anytime or</span>
             <button
+              type="button"
               onClick={() => navigate('/roadmap')}
-              className="px-6 py-2.5 bg-gradient-to-r from-[#39B1D1] to-[#6366F1] text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 text-sm"
+              className="font-bold text-emerald-100 underline hover:text-white"
             >
-              <Compass className="w-4 h-4 text-white" />
-              View Roadmap
+              view roadmap
             </button>
           </div>
-        ) : (
-          <>
-            <div className="pill-input-wrapper">
-              <textarea
-                ref={textareaRef}
-                id="chat-input"
-                value={input}
-                onChange={(e) => { handleTextChange(e); resetInactivityTimer(); }}
-                onKeyDown={(e) => { handleKeyDown(e); if (e.key !== 'Shift') resetInactivityTimer(); }}
-                onFocus={() => { setIsFocused(true); resetInactivityTimer(); }}
-                onBlur={() => setIsFocused(false)}
-                maxLength={300}
-                placeholder="Tell me about your academic background, budget, and preferred countries..."
-                rows={1}
-                className="pill-textarea"
-                aria-label="Chat message input"
-                disabled={inputDisabled}
-              />
-              <button
-                id="send-message-btn"
-                onClick={handleSend}
-                disabled={!input.trim() || inputDisabled}
-                className="circular-send-btn"
-                aria-label="Send message"
-              >
-                <Send className="w-4 h-4 text-white" />
-              </button>
-            </div>
-
-            <div className="w-full max-w-[768px] flex items-center justify-between mt-1 px-3">
-              <p className="pill-shortcut-hint !mt-0 text-left">Press Enter to send · Shift+Enter for new line</p>
-              {(isFocused || input.length > 0) && (
-                <span
-                  style={{
-                    fontSize: '0.7rem',
-                    color: getCounterColor(input.length),
-                    fontWeight: 500,
-                    letterSpacing: '0.02em',
-                    transition: 'color 0.2s ease'
-                  }}
-                >
-                  {input.length} / 300
-                </span>
-              )}
-            </div>
-          </>
         )}
+
+        <div className={`pill-input-wrapper${inputDisabled ? ' pill-input-wrapper--busy' : ''}`}>
+          <textarea
+            ref={textareaRef}
+            id="chat-input"
+            value={input}
+            onChange={(e) => { handleTextChange(e); resetInactivityTimer(); }}
+            onKeyDown={(e) => { handleKeyDown(e); if (e.key !== 'Shift') resetInactivityTimer(); }}
+            onFocus={() => { setIsFocused(true); resetInactivityTimer(); }}
+            onBlur={() => setIsFocused(false)}
+            placeholder={inputPlaceholder}
+            rows={1}
+            className="pill-textarea"
+            aria-label="Chat message input"
+            readOnly={inputDisabled}
+          />
+          <button
+            id="send-message-btn"
+            onClick={handleSend}
+            disabled={!input.trim() || inputDisabled}
+            className="circular-send-btn"
+            aria-label="Send message"
+          >
+            <Send className="w-4 h-4 text-white" />
+          </button>
+        </div>
+
+        <div className="w-full max-w-[768px] flex items-center justify-between mt-1 px-3">
+          <p className="pill-shortcut-hint !mt-0 text-left">Press Enter to send · Shift+Enter for new line</p>
+          {(isFocused || input.length > 0) && input.length > 3500 && (
+            <span
+              style={{
+                fontSize: '0.7rem',
+                color: getCounterColor(input.length),
+                fontWeight: 500,
+                letterSpacing: '0.02em',
+                transition: 'color 0.2s ease',
+              }}
+            >
+              {input.length.toLocaleString()} / 4,000
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Task 2: Score Update Toast */}

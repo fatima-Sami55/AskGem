@@ -16,7 +16,9 @@ from app.routers import chat, memory, search, roadmap, profile, recommendations,
 from app.services.ollama_service import check_model_available, get_queue_status
 from app.middleware.internal_auth import InternalAuthMiddleware
 
-logging.basicConfig(level=logging.INFO)
+_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, _log_level, logging.INFO))
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("main")
 
 app = FastAPI(title="AskPeri AI Server", version="1.0.0")
@@ -109,6 +111,12 @@ def health_check():
         "model": model_ok,
         "chroma": chroma_ok,
     }
+
+@app.get("/health/ping")
+def health_ping():
+    """Lightweight liveness probe (no Ollama/Chroma checks)."""
+    return {"ok": True}
+
 
 @app.get("/health/queue")
 def health_queue():

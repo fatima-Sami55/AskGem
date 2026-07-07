@@ -17,14 +17,14 @@ CHROMA_PATH = os.path.abspath(_chroma_env) if not os.path.isabs(_chroma_env) els
 COLLECTION_NAME = "conversation_memory"
 
 os.makedirs(CHROMA_PATH, exist_ok=True)
-logger.info(f"💾 [CHROMA SERVICE] Initializing PersistentClient at path='{CHROMA_PATH}'")
+logger.debug("[chroma] init path=%s", CHROMA_PATH)
 client = chromadb.PersistentClient(path=CHROMA_PATH)
 collection = client.get_or_create_collection(name=COLLECTION_NAME)
-logger.info(f"💾 [CHROMA SERVICE] Collection '{COLLECTION_NAME}' ready. Document count: {collection.count()}")
+logger.debug("[chroma] collection=%s count=%s", COLLECTION_NAME, collection.count())
 
 def save_memory(user_id: str, session_id: str, summary: str, metadata: dict = None) -> None:
     """Embeds and persists a conversation summary associated with user ID and session ID."""
-    logger.info(f"💾 [CHROMA SERVICE] Saving new memory for user_id='{user_id}', session_id='{session_id}'...")
+    logger.debug("[chroma] save user_id=%s session_id=%s", user_id, session_id)
     meta = metadata.copy() if metadata else {}
     meta["user_id"] = user_id
     meta["session_id"] = session_id or "default_session"
@@ -39,14 +39,14 @@ def save_memory(user_id: str, session_id: str, summary: str, metadata: dict = No
         metadatas=[meta],
         ids=[doc_id]
     )
-    logger.info(f"💾 [CHROMA SERVICE] Memory saved successfully (doc_id={doc_id}).")
+    logger.debug("[chroma] saved doc_id=%s", doc_id)
 
 def get_relevant_memories(user_id: str, query: str, session_id: str = None, n_results: int = 3) -> list:
     """Performs semantic similarity query on stored memories scoped to user ID (across all sessions)."""
     start = time.time()
     count = collection.count()
     if count == 0:
-        logger.info(f"💾 [CHROMA SERVICE] Collection empty. Returning empty memories list.")
+        logger.debug("[chroma] collection empty")
         return []
     try:
         where_clause = {"user_id": {"$eq": user_id}}
@@ -74,15 +74,15 @@ def get_relevant_memories(user_id: str, query: str, session_id: str = None, n_re
             retrieved = filtered[:n_results]
         else:
             retrieved = retrieved[:n_results]
-        logger.info(f"💾 [CHROMA SERVICE] Vector search completed in {duration:.2f}s | Retrieved {len(retrieved)} memories.")
+        logger.debug("[chroma] query done in %.2fs retrieved=%s", duration, len(retrieved))
         return retrieved
     except Exception as e:
-        logger.error(f"❌ [CHROMA SERVICE] Error querying ChromaDB: {str(e)}")
+        logger.error("[chroma] query error: %s", str(e))
         return []
 
 def delete_session_memories(user_id: str, session_id: str) -> None:
     """Deletes vector memory entries for a specific user and session."""
-    logger.info(f"💾 [CHROMA SERVICE] Deleting memories for user_id='{user_id}', session_id='{session_id}'...")
+    logger.debug("[chroma] delete session user_id=%s session_id=%s", user_id, session_id)
     try:
         collection.delete(where={
             "$and": [
@@ -90,17 +90,17 @@ def delete_session_memories(user_id: str, session_id: str) -> None:
                 {"session_id": {"$eq": session_id}},
             ]
         })
-        logger.info(f"💾 [CHROMA SERVICE] Session memories deleted for session_id='{session_id}'.")
+        logger.debug("[chroma] session deleted session_id=%s", session_id)
     except Exception as e:
-        logger.error(f"❌ [CHROMA SERVICE] Error deleting session memories: {str(e)}")
+        logger.error("[chroma] delete session error: %s", str(e))
         raise
 
 
 def delete_user_memories(user_id: str) -> None:
     """Deletes all persistent vector memory entries associated with a user ID."""
-    logger.info(f"💾 [CHROMA SERVICE] Deleting all memories for user_id='{user_id}'...")
+    logger.debug("[chroma] delete user user_id=%s", user_id)
     try:
         collection.delete(where={"user_id": user_id})
-        logger.info(f"💾 [CHROMA SERVICE] Memories deleted for user_id='{user_id}'.")
+        logger.debug("[chroma] user deleted user_id=%s", user_id)
     except Exception as e:
-        logger.error(f"❌ [CHROMA SERVICE] Error deleting memories: {str(e)}")
+        logger.error("[chroma] delete user error: %s", str(e))

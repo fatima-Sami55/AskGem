@@ -12,10 +12,10 @@ const AppError = require('../utils/appError');
 const catchAsync = require('../utils/catchAsync');
 const roadmapService = require('../services/roadmapService');
 const { extractAndValidateFromMessage } = require('../services/profileExtractorService');
-const { getAiServerHeaders, getAiServerUrl, summarizeSessionMemory, deleteSessionMemory } = require('../utils/aiServerClient');
+const { getAiServerHeaders, getAiServerUrl, summarizeSessionMemory, deleteSessionMemory, assertAiAvailable } = require('../utils/aiServerClient');
 
-const MAX_MESSAGES = 100;
-const MAX_MESSAGE_LENGTH = 500;
+const MAX_MESSAGES = Number(process.env.MAX_CHAT_MESSAGES) || 5000;
+const MAX_MESSAGE_LENGTH = Number(process.env.MAX_MESSAGE_LENGTH) || 4000;
 const CONFIDENCE_THRESHOLD = 0.75;
 
 const HIGH_STAKES_FIELDS = new Set([
@@ -276,7 +276,7 @@ function buildPendingExtraction(extracted) {
 }
 
 const trimSessionMessages = (session) => {
-  if (session.messages.length > MAX_MESSAGES) {
+  if (MAX_MESSAGES > 0 && session.messages.length > MAX_MESSAGES) {
     session.messages = session.messages.slice(-MAX_MESSAGES);
   }
 };
@@ -320,7 +320,7 @@ function buildAiPayload(session, text, profile, user, extractedFieldsSummary) {
       career_goals: profile.careerGoals || null,
       extracted_this_message: extractedFieldsSummary || null,
     },
-    conversation_history: session.messages.slice(-10).map((m) => ({
+    conversation_history: session.messages.slice(-30).map((m) => ({
       role: m.role === 'model' ? 'assistant' : m.role,
       content: m.content,
     })),
@@ -392,10 +392,6 @@ exports.sendMessage = catchAsync(async (req, res, next) => {
     return next(new AppError('Session not found.', 404));
   }
 
-  if (session.isClosed) {
-    return next(new AppError('This session is closed. No more messages can be sent.', 400));
-  }
-
   const user = getUser();
   const { extracted, validationMeta } = await extractAndValidateFromMessage(text, buildProfileContext(user));
   const {
@@ -414,7 +410,7 @@ exports.sendMessage = catchAsync(async (req, res, next) => {
     }).join(', ')
     : null;
 
-  if (Object.keys(pendingExtraction).length > 0) {
+  if (Object.keys(pendingExtraction).length > 0 && process.env.DEBUG_ASKPERI) {
     console.log(`[ProfileExtractor] Pending extraction (not saved): ${Object.keys(pendingExtraction).join(', ')}`);
   }
 
@@ -482,9 +478,28 @@ exports.sendMessageStream = catchAsync(async (req, res, next) => {
     return res.status(404).json({ status: 'error', message: 'Session not found.' });
   }
 
-  if (session.isClosed) {
-    return res.status(400).json({ status: 'error', message: 'This session is closed.' });
+  try {
+    await assertAiAvailable();
+  } catch (err) {
+    return next(err);
   }
+
+  console.info(`[chat] stream start session=${req.params.id}`);
+
+  session.messages.push({ role: 'user', content: text });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (res.flushHeaders) res.flushHeaders();
+
+  const writeSse = (payload) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    if (res.flush) res.flush();
+  };
+
+  writeSse({ type: 'status', phase: 'profile_extract', message: 'Understanding your message…' });
 
   const user = getUser();
   const { extracted, validationMeta } = await extractAndValidateFromMessage(text, buildProfileContext(user));
@@ -504,21 +519,25 @@ exports.sendMessageStream = catchAsync(async (req, res, next) => {
     }).join(', ')
     : null;
 
-  if (Object.keys(pendingExtraction).length > 0) {
+  if (Object.keys(pendingExtraction).length > 0 && process.env.DEBUG_ASKPERI) {
     console.log(`[ProfileExtractor] Pending extraction (not saved): ${Object.keys(pendingExtraction).join(', ')}`);
   }
 
-  session.messages.push({ role: 'user', content: text });
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  if (res.flushHeaders) res.flushHeaders();
+  writeSse({ type: 'status', phase: 'generating', message: 'Peri is composing a reply…' });
 
   let fullAssembledReply = '';
+  const llmStartedAt = Date.now();
+  let firstTokenLogged = false;
+  let lastProgressLogAt = llmStartedAt;
+
+  const aiHeartbeat = setInterval(() => {
+    const elapsedSec = Math.round((Date.now() - llmStartedAt) / 1000);
+    writeSse({ type: 'status', phase: 'generating', message: 'Peri is still working…' });
+    console.info(`[chat] Gemma still generating… ${elapsedSec}s elapsed, ${fullAssembledReply.length} chars so far`);
+  }, 15000);
 
   try {
+    console.info('[chat] calling AI /chat/stream (Gemma)…');
     const aiServerUrl = getAiServerUrl();
     const aiResponse = await fetch(`${aiServerUrl}/chat/stream`, {
       method: 'POST',
@@ -558,13 +577,41 @@ exports.sendMessageStream = catchAsync(async (req, res, next) => {
         try {
           const parsed = JSON.parse(content);
           if (parsed.type === 'search_metadata') continue;
+          if (parsed.type === 'status') {
+            if (parsed.phase === 'searching') {
+              console.info('[chat] Gemma pipeline: web search in progress…');
+            } else if (parsed.phase === 'generating') {
+              console.info('[chat] Gemma pipeline: composing answer…');
+            }
+            res.write(`data: ${content}\n\n`);
+            continue;
+          }
           if (parsed.type === 'sources' && Array.isArray(parsed.sources)) {
             res.write(`data: ${JSON.stringify({ type: 'sources', sources: parsed.sources })}\n\n`);
             continue;
           }
           if (parsed.chunk !== undefined) {
+            const chunkText = String(parsed.chunk).replace(/\\n/g, '\n');
+            if (chunkText && !firstTokenLogged) {
+              firstTokenLogged = true;
+              console.info(
+                '[chat] Gemma first token in %.2fs',
+                (Date.now() - llmStartedAt) / 1000,
+              );
+            }
+            if (chunkText) {
+              const now = Date.now();
+              if (now - lastProgressLogAt >= 10000) {
+                console.info(
+                  '[chat] Gemma streaming… %.0fs elapsed, %s chars',
+                  (now - llmStartedAt) / 1000,
+                  fullAssembledReply.length + chunkText.length,
+                );
+                lastProgressLogAt = now;
+              }
+            }
             res.write(`data: ${content}\n\n`);
-            fullAssembledReply += String(parsed.chunk).replace(/\\n/g, '\n');
+            fullAssembledReply += chunkText;
             continue;
           }
           res.write(`data: ${content}\n\n`);
@@ -584,6 +631,15 @@ exports.sendMessageStream = catchAsync(async (req, res, next) => {
     })}\n\n`);
     res.write('data: [DONE]\n\n');
     return res.end();
+  } finally {
+    clearInterval(aiHeartbeat);
+    if (fullAssembledReply.trim()) {
+      console.info(
+        '[chat] Gemma reply complete in %.2fs (%s chars)',
+        (Date.now() - llmStartedAt) / 1000,
+        fullAssembledReply.length,
+      );
+    }
   }
 
   res.write(`data: ${JSON.stringify({
@@ -613,6 +669,9 @@ exports.generateRoadmap = catchAsync(async (req, res, next) => {
   if (!session) {
     return next(new AppError('Session not found.', 404));
   }
+
+  await assertAiAvailable();
+  console.info(`[roadmap] generate start session=${req.params.id}`);
 
   const user = getUser();
   const profile = buildProfileContext(user);

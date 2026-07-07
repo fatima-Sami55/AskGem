@@ -83,8 +83,11 @@ async function fetchRecommendations(path, mergedProfile) {
   return aiResponse.json();
 }
 
-async function getOrFetchRecommendations(userId, mergedProfile, type, path) {
+async function getOrFetchRecommendations(userId, mergedProfile, type, path, { forceRefresh = false } = {}) {
   const cacheKey = buildCacheKey(userId, mergedProfile, type);
+  if (forceRefresh) {
+    recommendationsCache.delete(cacheKey);
+  }
   const cached = getCached(cacheKey, type);
   if (cached) {
     return cached;
@@ -109,20 +112,22 @@ async function getOrFetchRecommendations(userId, mergedProfile, type, path) {
   return promise;
 }
 
-exports.getUniversityRecommendations = async (userId, mergedProfile) => {
+exports.getUniversityRecommendations = async (userId, mergedProfile, options = {}) => {
   return getOrFetchRecommendations(
     userId,
     mergedProfile,
     'universities',
     '/recommendations/universities',
+    options,
   );
 };
 
-exports.getScholarshipRecommendations = async (userId, mergedProfile) => {
+exports.getScholarshipRecommendations = async (userId, mergedProfile, options = {}) => {
   return getOrFetchRecommendations(
     userId,
     mergedProfile,
     'scholarships',
     '/recommendations/scholarships',
+    options,
   );
 };

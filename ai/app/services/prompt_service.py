@@ -3,6 +3,7 @@ ai/app/services/prompt_service.py
 Service assembling prompts for chat interactions and conversation summarization.
 """
 import json
+from app.services.search_service import extract_locations_from_message
 
 PERI_SYSTEM_PERSONA = (
     "You are Peri, a strict AI education advisor exclusively helping Pakistani students with international higher education planning.\n\n"
@@ -135,9 +136,26 @@ def _format_search_context(search_results, profile: dict, user_message: str = No
             url = item.get("url", "")
             results_blocks.append(f"SOURCE {i}: {title}\nURL: {url}\nINFO: {snippet}")
 
+        user_request_line = (
+            f"Student's current message (answer THIS first): \"{user_message}\"\n"
+            if user_message else ""
+        )
+        locations = extract_locations_from_message(user_message or "")
+        location_rule = ""
+        if locations:
+            city_names = ", ".join(loc["city"] for loc in locations)
+            location_rule = (
+                f"\n⚠️ LOCATION CONSTRAINT: The student asked about **{city_names}**. "
+                f"Recommend universities in or immediately around {city_names} — NOT other cities in the same country "
+                f"unless you clearly explain that no matches were found in search results and offer nearby alternatives.\n"
+            )
+
         search_block = (
             f"=== REAL-TIME SEARCH RESULTS ===\n"
-            f"Searched for: {student_name} profile ({target_degree} in {major_str}, {country_str}, GPA {gpa_str})\n\n"
+            f"{user_request_line}"
+            f"Profile context: {target_degree} in {major_str}, preferred countries {country_str}, GPA {gpa_str}\n"
+            f"Use BOTH the student's message and profile — message constraints (city, country, degree) override generic profile defaults.\n"
+            f"{location_rule}\n"
             + "\n---\n\n".join(results_blocks) + "\n---\n\n"
         )
 
@@ -151,22 +169,27 @@ def _format_search_context(search_results, profile: dict, user_message: str = No
         structure_and_rules = (
             "=== YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE ===\n\n"
             "## Recommended Universities\n\n"
-            "- **[University Name]** ([Country])\n"
+            "List **at least 3 universities** when search results support it (otherwise list all relevant matches and explain gaps).\n\n"
+            "- **[University Name]** ([City, Country])\n"
             "  - Program: [Program Name]\n"
             "  - GPA Requirement: [Requirement from search results]\n"
-            "  - TOEFL Requirement: [IELTS/TOEFL requirement from search results]\n"
+            "  - TOEFL/IELTS Requirement: [Requirement from search results]\n"
             "  - Application Deadline: [Deadline from search results]\n"
-            "  - Why it fits: [1 sentence explanation]\n\n"
+            "  - Why it fits: [1-2 sentences tying program to the student's message AND profile]\n\n"
             "## Scholarships Available\n\n"
+            "List **2-3 scholarships** when relevant to the student's target city/country.\n\n"
             "- **[Scholarship Name]** ([Country or details])\n"
             "  - Amount: [Amount from results]\n"
             "  - Deadline: [Deadline from results]\n"
             "  - Eligibility: [Eligibility details]\n\n"
             "## Your Next Steps\n\n"
+            "Provide **4-5 concrete action items** referencing official sites from search results.\n\n"
             "1. [Action item 1]\n"
             "2. [Action item 2]\n"
-            "3. [Action item 3]\n\n"
+            "3. [Action item 3]\n"
+            "4. [Action item 4]\n\n"
             "## Important Notes\n\n"
+            "Add a short comparison or trade-offs paragraph (2-3 sentences). "
             "Requirements vary by program. Always verify GPA cutoffs and deadlines directly on university websites.\n\n"
             "MARKDOWN RULES — follow exactly:\n"
             "- Bold text: use **double asterisks** not *single*\n"
@@ -174,9 +197,10 @@ def _format_search_context(search_results, profile: dict, user_message: str = No
             "- Bullet points: use - (hyphen) with a space after hyphen. Every bullet and sub-bullet MUST be on its own line.\n"
             "- Never mix bold markers with bullet markers\n\n"
             "STRICT RULES:\n"
+            "- USER MESSAGE PRIORITY: Answer what the student asked in their latest message before giving generic profile-based advice.\n"
             f"- CRITICAL DEGREE RULE: The degree level in your response MUST match what the student asked for ({target_degree}).\n"
             f"- DEGREE MATCH FILTERING: Only recommend programs that fit {target_degree} from the search results.\n"
-            "- Write complete sentences only.\n"
+            "- Write complete, detailed sentences — aim for a thorough advisory reply, not a brief summary.\n"
             "- Never output raw JSON or curly brackets {}.\n"
             "- Only mention universities/scholarships found in search results above.\n"
             "- If search results don't have deadlines, say 'Verify on official university website'."
@@ -256,6 +280,8 @@ def build_prompt(user_message: str, profile: dict, memories: list, search_result
     unified_system_prompt = (
         f"{PERI_SYSTEM_PERSONA}\n\n"
         f"=== VERIFIED STUDENT CONTEXT & INSTRUCTIONS ===\n\n"
+        f"The student's latest message is the primary task. Use profile data to personalize, "
+        f"but never ignore explicit asks (city, country, degree, budget) in that message.\n\n"
         f"{context_content}"
     )
 
@@ -301,6 +327,8 @@ def build_roadmap_prompt(profile: dict, search_context: str, phase_skeleton: str
 
     english_test = profile.get("english_test") or {}
     english_test_type = english_test.get("testType") or "IELTS"
+    if english_test_type in ("None", "none", ""):
+        english_test_type = "IELTS or TOEFL"
     english_test_score = english_test.get("score")
     if english_test_score:
         english_test_str = f"{english_test_type} {english_test_score}"
@@ -325,21 +353,22 @@ def build_roadmap_prompt(profile: dict, search_context: str, phase_skeleton: str
         "Required keys:\n"
         "- title: string — must mention student's target degree, major, and at least 2 preferred countries\n"
         "- overallTimeline: string — realistic timeline for this degree level\n"
-        "- phases: array of 4 objects, each with phase (integer 1-4), title, timeline, description, steps (string array)\n"
+        "- phases: array of 4 objects, each with phase (integer 1-4), title, timeline, description, steps (string array), "
+        "and tasks (array of manual research items)\n"
+        "- each task: { title, url, fieldsToCollect (string array of data to write down), notes (optional) }\n"
         "- gaps: string array of 3-5 specific profile weaknesses referencing actual profile numbers\n"
         "- recommendations: string array of 3-5 actionable next steps tied to countries and degree\n\n"
         "PERSONALIZATION RULES (critical):\n"
         "1. Every phase title and description MUST name at least one of the student's preferred countries.\n"
-        "2. Every steps array MUST include concrete actions (university portals, tests, documents) — never vague advice.\n"
-        "3. Reference the student's GPA, nationality, budget, and English test status in gaps and recommendations.\n"
-        "4. For PhD: emphasize supervisor outreach, research proposal, and funding — not generic 'apply to university'.\n"
-        "5. For Germany: mention APS certificate and blocked account where relevant for Pakistani students.\n"
-        "6. Use search facts for deadlines/requirements when available; otherwise write 'Verify on official website'.\n"
-        "7. Do NOT output generic phase titles like 'Research Proposal' alone — add country/field context.\n"
-        "   BAD: 'Shortlisting'\n"
-        "   GOOD: 'Shortlist PhD CS Labs in Germany, Netherlands & Switzerland'\n"
-        "8. gaps must be specific, e.g. '3.17 GPA may be below ETH Zurich PhD cutoffs — target programs with flexible admission'.\n"
-        "9. recommendations must cite countries from the profile, not just 'apply to universities'.\n"
+        "2. Every phase MUST include a tasks array with official website URLs the student should visit manually.\n"
+        "3. Each task fieldsToCollect must list specific facts to record (deadlines, GPA cutoffs, fees, documents).\n"
+        "4. Reference the student's GPA, nationality, budget, and English test status in gaps and recommendations.\n"
+        "5. For PhD: emphasize supervisor outreach, research proposal, and funding — not generic 'apply to university'.\n"
+        "6. For Germany: include APS (aps.org.pk), uni-assist, DAAD, and embassy visa pages in tasks.\n"
+        "7. Use search facts for deadlines/requirements when available; otherwise write 'Verify on official website'.\n"
+        "8. Do NOT use blog or ranking sites — only official university, government, or embassy URLs.\n"
+        "9. gaps must be specific, e.g. '3.17 GPA may be below ETH Zurich PhD cutoffs — target programs with flexible admission'.\n"
+        "10. recommendations must cite countries from the profile, not just 'apply to universities'.\n"
     )
 
     user_prompt = (

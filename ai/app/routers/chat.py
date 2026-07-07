@@ -1,6 +1,6 @@
 """
 ai/app/routers/chat.py
-Router exposing chat capabilities with detailed BTS logging and search metadata.
+Router exposing chat capabilities.
 """
 import json
 import logging
@@ -16,12 +16,11 @@ router = APIRouter(tags=["chat"])
 @router.post("/chat", response_model=ChatResponse)
 def handle_chat(request: ChatRequest):
     """Processes incoming chat messages through memory, search, and Ollama reasoning pipeline."""
-    logger.info(f"📥 [CHAT ROUTER] Incoming request for user_id='{request.user_id}', session_id='{request.session_id}' | Message: '{request.message}'")
+    logger.info("[chat] request user_id=%s session_id=%s", request.user_id, request.session_id)
     try:
         profile_dict = request.profile.model_dump() if request.profile else {}
         history_list = [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else []
         
-        logger.info(f"🔄 [CHAT ROUTER] Forwarding request to chat_agent orchestrator...")
         response_text, searched, queries_used, sources = chat_agent.process_chat_turn(
             user_message=request.message,
             user_id=request.user_id,
@@ -29,8 +28,6 @@ def handle_chat(request: ChatRequest):
             profile=profile_dict,
             conversation_history=history_list
         )
-        
-        logger.info(f"✅ [CHAT ROUTER] Successfully generated response for user_id='{request.user_id}' ({len(response_text)} chars)")
         
         search_sources = [SearchSource(**s) for s in sources] if sources else []
         return ChatResponse(
@@ -41,38 +38,37 @@ def handle_chat(request: ChatRequest):
             sources=search_sources
         )
     except Exception as e:
-        logger.error(f"💥 [CHAT ROUTER] Error handling chat turn: {str(e)}", exc_info=True)
+        logger.error("[chat] error: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/chat/stream")
 def handle_chat_stream(request: ChatRequest):
     """Streams token chunks for incoming chat requests via Server-Sent Events (SSE)."""
-    logger.info(f"📥 [CHAT ROUTER STREAM] Incoming stream request for user_id='{request.user_id}', session_id='{request.session_id}'")
+    logger.info("[chat] stream request user_id=%s session_id=%s", request.user_id, request.session_id)
     try:
         profile_dict = request.profile.model_dump() if request.profile else {}
         history_list = [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else []
         
-        token_generator, metadata = chat_agent.stream_chat_turn(
-            user_message=request.message,
-            user_id=request.user_id,
-            session_id=request.session_id,
-            profile=profile_dict,
-            conversation_history=history_list
-        )
-        
         def event_stream():
-            sources = metadata.get("sources") or []
-            if sources:
-                yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
-
-            for chunk in token_generator:
-                if chunk:
-                    clean_chunk = chunk.replace("\n", "\\n")
+            for event in chat_agent.stream_chat_events(
+                user_message=request.message,
+                user_id=request.user_id,
+                session_id=request.session_id,
+                profile=profile_dict,
+                conversation_history=history_list,
+            ):
+                event_type = event.get("type")
+                if event_type == "chunk" and event.get("text"):
+                    clean_chunk = event["text"].replace("\n", "\\n")
                     yield f"data: {json.dumps({'chunk': clean_chunk})}\n\n"
+                elif event_type == "sources":
+                    yield f"data: {json.dumps({'type': 'sources', 'sources': event.get('sources', [])})}\n\n"
+                elif event_type == "status":
+                    yield f"data: {json.dumps(event)}\n\n"
 
             yield "data: [DONE]\n\n"
             
         return StreamingResponse(event_stream(), media_type="text/event-stream")
     except Exception as e:
-        logger.error(f"💥 [CHAT ROUTER STREAM] Error setting up stream: {str(e)}", exc_info=True)
+        logger.error("[chat] stream error: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

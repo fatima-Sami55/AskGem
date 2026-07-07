@@ -289,6 +289,8 @@ export default function InteractiveMascot({ size = 120, interactive = true, isLo
       switch (action) {
         case 'thinking':
           headTransform = 'scale(1)';
+          leftWingTransform = 'rotate(-38deg)';
+          rightWingTransform = 'rotate(38deg)';
           break;
         case 'sleeping':
           leftEyeTransform = 'scaleY(1)';
@@ -334,7 +336,8 @@ export default function InteractiveMascot({ size = 120, interactive = true, isLo
           break;
         case 'thinking':
           headTransform = 'translateY(-2px)';
-          rightWingTransform = 'rotate(15deg)';
+          leftWingTransform = 'rotate(-38deg)';
+          rightWingTransform = 'rotate(38deg)';
           beakTransform = 'scale(0.95)';
           break;
         case 'celebrating':
@@ -489,7 +492,7 @@ export default function InteractiveMascot({ size = 120, interactive = true, isLo
         </g>
 
 
-        {/* Main Body Group (back body, white belly, right wing) */}
+        {/* Main Body Group */}
         <g
           className="mascot-body-group"
           style={{
@@ -512,15 +515,18 @@ export default function InteractiveMascot({ size = 120, interactive = true, isLo
             d="M256 126 C276 82 331 82 350 126 C363 157 350 197 325 216 C350 261 361 337 330 381 C313 405 286 416 256 416 C226 416 199 405 182 381 C151 337 162 261 187 216 C162 197 149 157 162 126 C181 82 236 82 256 126 Z"
             fill="#faf8f5"
           />
+        </g>
 
+        {/* Wings on top of body so both flippers stay visible */}
+        <g className="mascot-wings-group">
           <path
             className="mascot-part-wing-l"
             d="M143 228 C106 266 81 318 88 340 C93 355 112 350 132 326 C149 305 163 272 169 246 C171 235 154 226 143 228 Z"
             fill="#356a73"
             style={{
-              transform: (!reducedMotion && (action === 'celebrating' || action === 'dancing')) ? undefined : motionStyles.leftWingTransform,
+              transform: (!reducedMotion && (action === 'celebrating' || action === 'dancing' || action === 'thinking')) ? undefined : motionStyles.leftWingTransform,
               transformOrigin: '154px 244px',
-              transition: (!reducedMotion && (action === 'celebrating' || action === 'dancing')) ? 'none' : 'transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
+              transition: (!reducedMotion && (action === 'celebrating' || action === 'dancing' || action === 'thinking')) ? 'none' : 'transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
             }}
           />
           <path
@@ -528,12 +534,11 @@ export default function InteractiveMascot({ size = 120, interactive = true, isLo
             d="M369 228 C406 266 431 318 424 340 C419 355 400 350 380 326 C363 305 349 272 343 246 C341 235 358 226 369 228 Z"
             fill="#356a73"
             style={{
-              transform: (!reducedMotion && (action === 'waving' || action === 'celebrating' || action === 'dancing' || action === 'writing')) ? undefined : motionStyles.rightWingTransform,
+              transform: (!reducedMotion && (action === 'waving' || action === 'celebrating' || action === 'dancing' || action === 'writing' || action === 'thinking')) ? undefined : motionStyles.rightWingTransform,
               transformOrigin: '358px 244px',
-              transition: (!reducedMotion && (action === 'waving' || action === 'celebrating' || action === 'dancing' || action === 'writing')) ? 'none' : 'transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
+              transition: (!reducedMotion && (action === 'waving' || action === 'celebrating' || action === 'dancing' || action === 'writing' || action === 'thinking')) ? 'none' : 'transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
             }}
           />
-
         </g>
 
         {/* Head Group (Head outline, cheeks, beak, eyes, accessories) */}

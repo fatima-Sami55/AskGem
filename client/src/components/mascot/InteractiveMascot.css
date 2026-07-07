@@ -2,6 +2,24 @@
    fallbacks already in motionStyles, so only run when motion is OK. */
 @media (prefers-reduced-motion: no-preference) {
 
+  /* ===== THINKING (loading screen) ===== */
+  @keyframes mascot-think-wing-l {
+    0%, 100% { transform: rotate(-38deg); }
+    50%      { transform: rotate(-48deg); }
+  }
+  @keyframes mascot-think-wing-r {
+    0%, 100% { transform: rotate(38deg); }
+    50%      { transform: rotate(48deg); }
+  }
+  .mascot-svg.thinking-action .mascot-part-wing-l {
+    animation: mascot-think-wing-l 1.4s ease-in-out infinite;
+    transform-origin: 154px 244px;
+  }
+  .mascot-svg.thinking-action .mascot-part-wing-r {
+    animation: mascot-think-wing-r 1.4s ease-in-out infinite;
+    transform-origin: 358px 244px;
+  }
+
   /* ===== WAVING ===== */
   @keyframes mascot-wave-wing {
     0%, 100% { transform: rotate(-30deg); }

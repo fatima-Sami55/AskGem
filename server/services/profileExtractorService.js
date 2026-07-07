@@ -54,18 +54,18 @@ function extractName(message, currentContext) {
 
             // 1. If new name is a substring of existing name (and not identical) -> ignore (e.g. "Fatima" when context is "Fatima Sami")
             if (existingLower.includes(newLower) && existingLower !== newLower) {
-              console.log('[extractName] conflict: REJECTED (substring of existing name)');
+              if (DEBUG_ASKPERI) console.log('[extractName] conflict: REJECTED (substring of existing name)');
               return undefined;
             }
 
             if (existingLower === newLower) {
-              console.log('[extractName] conflict: REJECTED (identical to existing name)');
+              if (DEBUG_ASKPERI) console.log('[extractName] conflict: REJECTED (identical to existing name)');
               return undefined;
             }
 
-            console.log('[extractName] conflict: ALLOWED (replacing existing name)');
+            if (DEBUG_ASKPERI) console.log('[extractName] conflict: ALLOWED (replacing existing name)');
           } else {
-            console.log('[extractName] conflict: ALLOWED (new name)');
+            if (DEBUG_ASKPERI) console.log('[extractName] conflict: ALLOWED (new name)');
           }
           return extractedName;
         }
@@ -624,7 +624,7 @@ function extractFromMessage(message, currentContext = {}) {
   if (age !== undefined) result.age = age;
 
   const keys = Object.keys(result);
-  if (keys.length > 0) {
+  if (keys.length > 0 && DEBUG_ASKPERI) {
     console.log(`[ProfileExtractorService] Extracted fields: ${keys.join(', ')}`);
   }
 
@@ -632,7 +632,8 @@ function extractFromMessage(message, currentContext = {}) {
 }
 
 const CONFIDENCE_THRESHOLD = 0.75;
-const EXTRACT_TIMEOUT_MS = 45000;
+const EXTRACT_TIMEOUT_MS = Number(process.env.EXTRACT_TIMEOUT_MS) || 120000;
+const DEBUG_ASKPERI = Boolean(process.env.DEBUG_ASKPERI);
 
 function applyValidatedFields(currentContext, regexDraft, validationFields) {
   const merged = {};
@@ -681,6 +682,12 @@ function applyValidatedFields(currentContext, regexDraft, validationFields) {
  */
 async function extractAndValidateFromMessage(message, currentContext = {}) {
   const regexDraft = extractFromMessage(message, currentContext);
+  const draftKeys = Object.keys(regexDraft).filter((k) => !k.startsWith('_'));
+
+  // Short messages with nothing to validate should not block chat for 2 minutes on LLM.
+  if (draftKeys.length === 0 && (message || '').trim().length < 100) {
+    return { extracted: regexDraft, validationMeta: {}, source: 'regex_fast' };
+  }
 
   try {
     const aiServerUrl = getAiServerUrl();
@@ -703,7 +710,7 @@ async function extractAndValidateFromMessage(message, currentContext = {}) {
         validated._countryOps = regexDraft._countryOps;
       }
       const keys = Object.keys(validated).filter((k) => !k.startsWith('_'));
-      if (keys.length > 0) {
+      if (keys.length > 0 && DEBUG_ASKPERI) {
         console.log(`[ProfileExtractor] LLM-validated fields: ${keys.join(', ')}`);
       }
       return {

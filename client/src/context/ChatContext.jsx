@@ -2,6 +2,8 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import api from '../services/api';
 import ProfileConflictModal from '../components/ui/ProfileConflictModal';
 import { useProfile } from './ProfileContext';
+import { newMessageId } from '../utils/messageIds';
+import { parseSseBuffer, parseSsePayload } from '../utils/sseParser';
 
 const ChatContext = createContext(null);
 
@@ -69,40 +71,73 @@ export function ChatProvider({ children }) {
   const [profileAutoToast, setProfileAutoToast] = useState(null);
   const [streamFallbackToast, setStreamFallbackToast] = useState(null);
   const [aiQueue, setAiQueue] = useState({ busy: false, current_task: null });
+  const [pipelineStatus, setPipelineStatus] = useState(null);
 
   const activeStreamRef = useRef(null);
-  const roadmapPromptShownRef = useRef(false);
+  const refreshAiQueueRef = useRef(null);
+  const awaitingReplyRef = useRef(false);
 
-  const showProfileRoadmapPrompt = useCallback(() => {
-    if (roadmapPromptShownRef.current) return;
-    roadmapPromptShownRef.current = true;
+  const updateMessageById = useCallback((messageId, updater) => {
+    if (!messageId) return;
     setMessages((prev) => {
-      if (prev.some((m) => m.isRoadmapPrompt)) return prev;
-      return [...prev, { role: 'system', isRoadmapPrompt: true, timestamp: new Date() }];
+      const idx = prev.findIndex((m) => m.id === messageId);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = typeof updater === 'function' ? updater(next[idx]) : { ...next[idx], ...updater };
+      return next;
     });
   }, []);
 
+  const refreshAiQueue = useCallback(async () => {
+    try {
+      const res = await api.get('/ai/queue');
+      const next = res.data?.data || { busy: false, current_task: null };
+      setAiQueue(next);
+      return next;
+    } catch {
+      setAiQueue({ busy: false, current_task: null });
+      return { busy: false, current_task: null };
+    }
+  }, []);
+
+  refreshAiQueueRef.current = refreshAiQueue;
+
+  const normalizeSessionMessages = useCallback((rawMessages) => (
+    (rawMessages || [])
+      .filter((m) => !m.isRoadmapPrompt)
+      .map((m) => (m.id ? m : { ...m, id: newMessageId() }))
+  ), []);
+
   useEffect(() => {
     let cancelled = false;
+    let timeoutId = null;
+    const POLL_FAST_MS = 2000;
+    const POLL_SLOW_MS = 30000;
+
     const pollQueue = async () => {
-      try {
-        const res = await api.get('/ai/queue');
-        if (!cancelled) {
-          setAiQueue(res.data?.data || { busy: false, current_task: null });
-        }
-      } catch {
-        if (!cancelled) setAiQueue({ busy: false, current_task: null });
+      if (cancelled) return { busy: false, current_task: null };
+      if (refreshAiQueueRef.current) {
+        return refreshAiQueueRef.current();
       }
+      return { busy: false, current_task: null };
     };
-    pollQueue();
-    const intervalId = setInterval(pollQueue, 2000);
+
+    const loop = async () => {
+      const status = await pollQueue();
+      if (cancelled) return;
+      const fastPoll = status?.busy || isThinking || isStreaming || isGeneratingRoadmap;
+      timeoutId = setTimeout(loop, fastPoll ? POLL_FAST_MS : POLL_SLOW_MS);
+    };
+
+    loop();
     return () => {
       cancelled = true;
-      clearInterval(intervalId);
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [isThinking, isStreaming, isGeneratingRoadmap]);
 
-  const aiQueueBlocksSend = aiQueue.busy && aiQueue.current_task !== 'chat';
+  const aiQueueBusy = aiQueue.busy;
+  const aiQueueBlocksSend = aiQueueBusy;
 
   const showAutoAppliedToast = useCallback((autoApplied) => {
     const keys = Object.keys(autoApplied || {});
@@ -122,18 +157,14 @@ export function ChatProvider({ children }) {
     setPendingExtraction({ pendingExtraction: pending, conflicts });
 
     if (Object.keys(autoApplied).length > 0) {
-      await fetchProfile();
+      await fetchProfile({ silent: true });
       showAutoAppliedToast(autoApplied);
     }
 
     if (conflicts.length > 0 || Object.keys(pending).length > 0) {
       setConflictModalOpen(true);
     }
-
-    if (result.profileComplete) {
-      showProfileRoadmapPrompt();
-    }
-  }, [fetchProfile, showAutoAppliedToast, showProfileRoadmapPrompt]);
+  }, [fetchProfile, showAutoAppliedToast]);
 
   const handleConflictResolve = useCallback(async (choices) => {
     const pending = pendingExtraction?.pendingExtraction || {};
@@ -174,10 +205,11 @@ export function ChatProvider({ children }) {
     const hasUpdates = Object.keys(body).length > 0;
     if (hasUpdates) {
       await updateProfile(body);
-      await fetchProfile();
+      await fetchProfile({ silent: true });
       setMessages((prev) => [
         ...prev,
         {
+          id: newMessageId(),
           role: 'system',
           content: 'Profile updated. Ask Peri again if you want advice based on your new details.',
           timestamp: new Date(),
@@ -243,7 +275,6 @@ export function ChatProvider({ children }) {
     setGeneratedRoadmap(null);
     setIsClosed(false);
     setPendingExtraction(null);
-    roadmapPromptShownRef.current = false;
     return session;
   }, []);
 
@@ -251,10 +282,9 @@ export function ChatProvider({ children }) {
     const res = await api.get(`/chat/session/${sessionId}`);
     const session = res.data.data.session;
     setActiveSessionId(sessionId);
-    setMessages(session.messages || []);
+    setMessages(normalizeSessionMessages(session.messages));
     setIsClosed(session.isClosed || false);
     setPendingExtraction(null);
-    roadmapPromptShownRef.current = false;
 
     if (session.generatedRoadmap?.phases?.length) {
       setGeneratedRoadmap(session.generatedRoadmap);
@@ -281,10 +311,98 @@ export function ChatProvider({ children }) {
       setGeneratedRoadmap(null);
       setRecommendations({ programs: [], scholarships: [], roadmap: null });
     }
-  }, []);
+  }, [normalizeSessionMessages]);
+
+  const syncMessagesFromServer = useCallback(async (sessionId, { allowDuringReply = false } = {}) => {
+    if (!sessionId) return null;
+    try {
+      const sessionRes = await api.get(`/chat/session/${sessionId}`);
+      const updatedSession = sessionRes.data?.data?.session;
+      if (updatedSession?.messages?.length) {
+        if (!allowDuringReply && awaitingReplyRef.current) {
+          // In-flight stream: DB may not have the latest user/model messages yet.
+        } else {
+          setMessages((prev) => {
+            const incoming = normalizeSessionMessages(updatedSession.messages);
+            return incoming.map((m, idx) => {
+              const byIndex = prev[idx];
+              if (byIndex && byIndex.role === m.role && byIndex.content === m.content) {
+                return {
+                  ...m,
+                  id: byIndex.id,
+                  isStreaming: byIndex.isStreaming,
+                  sources: byIndex.sources ?? m.sources,
+                };
+              }
+              const byContent = prev.find(
+                (p) => p.role === m.role && p.content === m.content,
+              );
+              if (byContent?.id) {
+                return { ...m, id: byContent.id };
+              }
+              return m;
+            });
+          });
+        }
+      }
+      if (updatedSession) {
+        setIsClosed(updatedSession.isClosed || false);
+      }
+      return updatedSession;
+    } catch (err) {
+      console.error('Failed to sync session messages:', err);
+      return null;
+    }
+  }, [normalizeSessionMessages]);
+
+  // If SSE parsing misses the reply, poll saved session messages while Peri is working.
+  useEffect(() => {
+    if ((!isThinking && !isStreaming && !awaitingReplyRef.current) || !activeSessionId) return undefined;
+
+    const intervalId = setInterval(async () => {
+      if (!activeSessionId) return;
+      try {
+        const sessionRes = await api.get(`/chat/session/${activeSessionId}`);
+        const saved = sessionRes.data?.data?.session?.messages || [];
+        const lastUserIdx = saved.reduce(
+          (acc, m, idx) => (m.role === 'user' ? idx : acc),
+          -1,
+        );
+        const hasReplyAfterLatestUser = saved
+          .slice(lastUserIdx + 1)
+          .some((m) => m.role === 'model' && String(m.content || '').trim());
+        if (hasReplyAfterLatestUser) {
+          awaitingReplyRef.current = false;
+          setPipelineStatus(null);
+          setIsThinking(false);
+          setIsStreaming(false);
+          await syncMessagesFromServer(activeSessionId, { allowDuringReply: true });
+        }
+      } catch (err) {
+        console.error('Failed to poll session for reply:', err);
+      }
+    }, 8000);
+
+    return () => clearInterval(intervalId);
+  }, [isThinking, isStreaming, activeSessionId, syncMessagesFromServer]);
 
   const sendMessage = useCallback(async (text) => {
-    if (!activeSessionId || !text.trim()) return;
+    if (!text.trim()) return;
+    if (aiQueue.busy) return;
+
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      try {
+        const res = await api.post('/chat/session');
+        const session = res.data.data.session;
+        setSessions((prev) => [session, ...prev]);
+        setActiveSessionId(session._id);
+        sessionId = session._id;
+      } catch (err) {
+        console.error('Failed to create chat session:', err);
+        return;
+      }
+    }
 
     if (activeStreamRef.current) {
       activeStreamRef.current.abort();
@@ -292,125 +410,137 @@ export function ChatProvider({ children }) {
     const controller = new AbortController();
     activeStreamRef.current = controller;
 
-    setMessages((prev) => [...prev, { role: 'user', content: text, timestamp: new Date() }]);
+    const modelMessageId = newMessageId();
+    setMessages((prev) => [
+      ...prev,
+      { id: newMessageId(), role: 'user', content: text, timestamp: new Date() },
+    ]);
+    awaitingReplyRef.current = true;
     setIsThinking(true);
-    setIsStreaming(false);
+    setIsStreaming(true);
+
+    const upsertModelMessage = (patch) => {
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === modelMessageId);
+        if (idx === -1) {
+          return [
+            ...prev,
+            {
+              id: modelMessageId,
+              role: 'model',
+              content: '',
+              timestamp: new Date(),
+              isStreaming: true,
+              sources: [],
+              ...patch,
+            },
+          ];
+        }
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...patch };
+        return next;
+      });
+    };
 
     try {
       const baseUrl = import.meta.env.VITE_API_URL || '/api/v1';
-      const streamUrl = `${baseUrl}/chat/session/${activeSessionId}/stream`;
+      const streamUrl = `${baseUrl}/chat/session/${sessionId}/stream`;
 
       const response = await fetch(streamUrl, {
         method: 'POST',
         signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
         body: JSON.stringify({ text }),
       });
+
+      if (response.status === 429) {
+        let busyMessage = 'AI is busy. Please wait and try again.';
+        try {
+          const data = await response.json();
+          busyMessage = data.message || busyMessage;
+        } catch {
+          // ignore parse errors
+        }
+        upsertModelMessage({
+          content: busyMessage,
+          isStreaming: false,
+          isError: true,
+        });
+        setIsThinking(false);
+        setIsStreaming(false);
+        await refreshAiQueue();
+        return;
+      }
 
       if (!response.ok || !response.body) {
         throw new Error('Streaming failed, switching to fallback.');
       }
 
-      setIsThinking(false);
-      setIsStreaming(true);
-
-      setMessages((prev) => [
-        ...prev,
-        { role: 'model', content: '', timestamp: new Date(), isStreaming: true, sources: [] },
-      ]);
-
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
-      let fullStreamedText = '';
-      let displayedLength = 0;
-      let isStreamDone = false;
-      let extractionResult = null;
+      const streamState = { fullStreamedText: '', extractionResult: null, error: null, sources: [] };
 
-      const typingInterval = setInterval(() => {
-        if (displayedLength < fullStreamedText.length) {
-          const backlog = fullStreamedText.length - displayedLength;
-          let speedFactor = 3;
-          if (backlog > 80) speedFactor = 16;
-          else if (backlog > 40) speedFactor = 8;
-          else if (backlog > 15) speedFactor = 5;
-
-          displayedLength += Math.min(speedFactor, backlog);
-          const currentText = fullStreamedText.slice(0, displayedLength);
-
-          setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const lastIdx = prev.length - 1;
-            if (prev[lastIdx].role !== 'model') return prev;
-            return [...prev.slice(0, lastIdx), { ...prev[lastIdx], content: currentText }];
-          });
-        } else if (isStreamDone && displayedLength >= fullStreamedText.length) {
-          clearInterval(typingInterval);
-          setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const lastIdx = prev.length - 1;
-            if (prev[lastIdx].role !== 'model') return prev;
-            return [...prev.slice(0, lastIdx), { ...prev[lastIdx], isStreaming: false }];
-          });
-          setIsStreaming(false);
+      const handleRawEvent = (rawVal) => {
+        const payload = parseSsePayload(rawVal);
+        if (payload.type === 'done') return;
+        if (payload.type === 'error') {
+          streamState.error = new Error(payload.message || 'AI service unavailable');
+          return;
         }
-      }, 8);
+        if (payload.type === 'pending_extraction') {
+          streamState.extractionResult = payload.data;
+          return;
+        }
+        if (payload.type === 'sources') {
+          streamState.sources = payload.sources;
+          return;
+        }
+        if (payload.type === 'status') {
+          return;
+        }
+        if (payload.type === 'chunk' && payload.text) {
+          streamState.fullStreamedText += payload.text;
+          setPipelineStatus(null);
+          setIsThinking(false);
+          upsertModelMessage({
+            content: streamState.fullStreamedText,
+            sources: streamState.sources,
+            isStreaming: true,
+          });
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const textChunk = decoder.decode(value, { stream: true });
-        buffer += textChunk;
-        const events = buffer.split('\n\n');
-        buffer = events.pop();
-
-        for (const evt of events) {
-          const trimmed = evt.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-          const rawVal = trimmed.replace('data: ', '');
-          if (rawVal === '[DONE]') {
-            isStreamDone = true;
-          } else {
-            let tokenText = '';
-            try {
-              const parsed = JSON.parse(rawVal);
-              if (parsed.type === 'error') {
-                throw new Error(parsed.message || 'AI service unavailable');
-              }
-              if (parsed.type === 'pending_extraction') {
-                extractionResult = parsed;
-                if (parsed.profileComplete) {
-                  showProfileRoadmapPrompt();
-                }
-                continue;
-              }
-              if (parsed.type === 'sources' && Array.isArray(parsed.sources)) {
-                setMessages((prev) => {
-                  if (prev.length === 0) return prev;
-                  const lastIdx = prev.length - 1;
-                  if (prev[lastIdx].role !== 'model') return prev;
-                  return [...prev.slice(0, lastIdx), { ...prev[lastIdx], sources: parsed.sources }];
-                });
-                continue;
-              }
-              if (parsed.chunk !== undefined) {
-                tokenText = String(parsed.chunk).replace(/\\n/g, '\n');
-              }
-            } catch (err) {
-              if (err.message && err.message !== rawVal) throw err;
-              tokenText = rawVal.replace(/\\n/g, '\n');
-            }
-            if (tokenText) {
-              fullStreamedText += tokenText;
-            }
-          }
-        }
+        buffer += decoder.decode(value, { stream: true });
+        buffer = parseSseBuffer(buffer, handleRawEvent);
       }
 
-      isStreamDone = true;
+      buffer = parseSseBuffer(`${buffer}\n\n`, handleRawEvent);
 
-      await handleExtractionResult(extractionResult);
+      if (streamState.error) {
+        throw streamState.error;
+      }
+
+      if (streamState.fullStreamedText.trim()) {
+        upsertModelMessage({
+          content: streamState.fullStreamedText,
+          sources: streamState.sources,
+          isStreaming: false,
+        });
+      }
+      awaitingReplyRef.current = false;
+      setPipelineStatus(null);
+      setIsStreaming(false);
+      setIsThinking(false);
+
+      await handleExtractionResult(streamState.extractionResult);
 
       try {
         const listRes = await api.get('/chat/sessions');
@@ -419,36 +549,39 @@ export function ChatProvider({ children }) {
         console.error('Failed to refresh sessions:', err);
       }
 
+      await syncMessagesFromServer(sessionId, { allowDuringReply: true });
+
       try {
-        const sessionRes = await api.get(`/chat/session/${activeSessionId}`);
+        const sessionRes = await api.get(`/chat/session/${sessionId}`);
         const updatedSession = sessionRes.data?.data?.session;
-        if (updatedSession) {
-          setIsClosed(updatedSession.isClosed || false);
-          if (updatedSession.generatedRoadmap) {
-            setGeneratedRoadmap(updatedSession.generatedRoadmap);
-            const opps = updatedSession.generatedRoadmap.opportunities || [];
-            setRecommendations({
-              programs: opps.filter((o) => o.type === 'program' || o.type === 'university_program'),
-              scholarships: opps.filter((o) => o.type === 'scholarship'),
-              roadmap: {
-                title: updatedSession.generatedRoadmap.title || 'Your Custom Roadmap',
-                phases: updatedSession.generatedRoadmap.phases || [],
-              },
-            });
-          }
+        if (updatedSession?.generatedRoadmap) {
+          setGeneratedRoadmap(updatedSession.generatedRoadmap);
+          const opps = updatedSession.generatedRoadmap.opportunities || [];
+          setRecommendations({
+            programs: opps.filter((o) => o.type === 'program' || o.type === 'university_program'),
+            scholarships: opps.filter((o) => o.type === 'scholarship'),
+            roadmap: {
+              title: updatedSession.generatedRoadmap.title || 'Your Custom Roadmap',
+              phases: updatedSession.generatedRoadmap.phases || [],
+            },
+          });
         }
       } catch (err) {
         console.error('Failed to fetch latest session:', err);
       }
 
       await fetchProfileScore();
+      await refreshAiQueue();
     } catch (err) {
       if (err.name === 'AbortError') return;
+      setIsStreaming(false);
+      setIsThinking(true);
+      await syncMessagesFromServer(sessionId, { allowDuringReply: true });
       console.warn('[ChatContext] Streaming unavailable, trying standard endpoint:', err.message);
       setStreamFallbackToast({ id: Date.now() });
       setTimeout(() => setStreamFallbackToast(null), 4000);
       try {
-        const res = await api.post(`/chat/session/${activeSessionId}/message`, { text });
+        const res = await api.post(`/chat/session/${sessionId}/message`, { text });
         const {
           session: updatedSession,
           reply,
@@ -465,28 +598,18 @@ export function ChatProvider({ children }) {
           profileComplete,
         });
 
-        setMessages((prev) => [...prev, { role: 'model', content: '', timestamp: new Date(), isStreaming: true }]);
         setIsClosed(updatedSession?.isClosed || false);
+        setIsThinking(false);
 
         let displayedLength = 0;
         const typingInterval = setInterval(() => {
           if (displayedLength < reply.length) {
             displayedLength += Math.min(3, reply.length - displayedLength);
             const currentText = reply.slice(0, displayedLength);
-            setMessages((prev) => {
-              if (prev.length === 0) return prev;
-              const lastIdx = prev.length - 1;
-              if (prev[lastIdx].role !== 'model') return prev;
-              return [...prev.slice(0, lastIdx), { ...prev[lastIdx], content: currentText }];
-            });
+            upsertModelMessage({ content: currentText, isStreaming: true });
           } else {
             clearInterval(typingInterval);
-            setMessages((prev) => {
-              if (prev.length === 0) return prev;
-              const lastIdx = prev.length - 1;
-              if (prev[lastIdx].role !== 'model') return prev;
-              return [...prev.slice(0, lastIdx), { ...prev[lastIdx], isStreaming: false }];
-            });
+            upsertModelMessage({ content: reply, isStreaming: false });
           }
         }, 12);
 
@@ -507,26 +630,26 @@ export function ChatProvider({ children }) {
         }
 
         await fetchProfileScore();
+        await refreshAiQueue();
+        await syncMessagesFromServer(sessionId, { allowDuringReply: true });
       } catch (fallbackErr) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'model',
-            content: fallbackErr.response?.data?.message || "I'm having trouble connecting right now. Please try again.",
-            timestamp: new Date(),
-            isError: true,
-          },
-        ]);
+        upsertModelMessage({
+          content: fallbackErr.response?.data?.message || "I'm having trouble connecting right now. Please try again.",
+          isStreaming: false,
+          isError: true,
+        });
       } finally {
         setIsThinking(false);
         setIsStreaming(false);
       }
     } finally {
       activeStreamRef.current = null;
+      awaitingReplyRef.current = false;
+      setPipelineStatus(null);
       setIsStreaming(false);
       setIsThinking(false);
     }
-  }, [activeSessionId, fetchProfileScore, handleExtractionResult, showProfileRoadmapPrompt]);
+  }, [activeSessionId, aiQueue.busy, fetchProfileScore, handleExtractionResult, updateMessageById, syncMessagesFromServer, refreshAiQueue]);
 
   const deleteSession = useCallback(async (sessionId) => {
     try {
@@ -557,6 +680,9 @@ export function ChatProvider({ children }) {
     if (!sessionId) {
       throw new Error('No chat session available for roadmap generation.');
     }
+    if (aiQueue.busy) {
+      throw new Error('AI is busy. Please wait and try again.');
+    }
     setIsGeneratingRoadmap(true);
     try {
       const res = await api.post(`/chat/session/${sessionId}/generate-roadmap`, {}, {
@@ -582,6 +708,7 @@ export function ChatProvider({ children }) {
       setMessages((prev) => [
         ...prev,
         {
+          id: newMessageId(),
           role: 'system',
           content: 'Your roadmap is ready! Open the Roadmap page to review your personalized plan.',
           timestamp: new Date(),
@@ -594,7 +721,7 @@ export function ChatProvider({ children }) {
     } finally {
       setIsGeneratingRoadmap(false);
     }
-  }, [activeSessionId, sessions]);
+  }, [activeSessionId, sessions, aiQueue.busy]);
 
   const modalConflicts = buildModalConflicts(
     pendingExtraction?.conflicts,
@@ -621,7 +748,9 @@ export function ChatProvider({ children }) {
         profileAutoToast,
         streamFallbackToast,
         aiQueue,
+        aiQueueBusy,
         aiQueueBlocksSend,
+        pipelineStatus,
         pendingExtraction,
         fetchSessions,
         createSession,

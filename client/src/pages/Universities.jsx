@@ -3,8 +3,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useProfile } from '../context/ProfileContext';
-
+import { useChat } from '../context/ChatContext';
 import api from '../services/api';
+import AiBusyBanner from '../components/features/AiBusyBanner';
 
 import {
   fetchRecommendationsCached,
@@ -35,11 +36,30 @@ const LOADING_STAGES = [
   { afterMs: 45000, message: 'First load can take a few minutes on CPU…' },
 ];
 
+function canonicalUniKey(url) {
+  try {
+    const u = new URL(url);
+    return `${u.hostname.replace(/^www\./i, '')}${u.pathname.replace(/\/$/, '')}`.toLowerCase();
+  } catch {
+    return (url || '').toLowerCase();
+  }
+}
+
+function normalizeUniName(name) {
+  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isTuitionFree(tuition) {
+  if (!tuition || typeof tuition !== 'string') return false;
+  return /tuition[- ]free|no tuition|free tuition|semester (?:fee|contribution) only|public university|€\s*0|0\s*eur|low \/ tuition-free/i.test(tuition);
+}
+
 
 
 export default function UniversitiesPage() {
 
   const { user } = useProfile();
+  const { aiQueueBlocksSend, aiQueue } = useChat();
 
   const navigate = useNavigate();
 
@@ -87,8 +107,14 @@ export default function UniversitiesPage() {
   const cacheKey = getRecommendationsCacheKey('universities');
 
   useEffect(() => {
-    if (!profileReady) {
-      setLoading(false);
+    if (userGpa != null && !Number.isNaN(Number(userGpa))) {
+      setMaxGpaFilter(Number(userGpa));
+    }
+  }, [userGpa]);
+
+  useEffect(() => {
+    if (!profileReady || aiQueueBlocksSend) {
+      if (!profileReady) setLoading(false);
       return undefined;
     }
 
@@ -113,7 +139,10 @@ export default function UniversitiesPage() {
       try {
         const res = await fetchRecommendationsCached(
           cacheKey,
-          () => api.get('/profile/recommendations/universities', { signal: controller.signal }),
+          () => api.get('/profile/recommendations/universities', {
+            signal: controller.signal,
+            params: forceRefresh ? { refresh: 'true' } : undefined,
+          }),
           { forceRefresh },
         );
 
@@ -141,7 +170,7 @@ export default function UniversitiesPage() {
       stageTimers.forEach(clearTimeout);
       controller.abort();
     };
-  }, [profileReady, user?.profile?.gpa, user?.profile?.preferredCountries, user?.profile?.targetDegree, user?.profile?.major, refreshKey, cacheKey]);
+  }, [profileReady, aiQueueBlocksSend, user?.profile?.gpa, user?.profile?.preferredCountries, user?.profile?.targetDegree, user?.profile?.major, refreshKey, cacheKey]);
 
   const handleRefresh = useCallback(() => {
     setFromCache(false);
@@ -150,43 +179,37 @@ export default function UniversitiesPage() {
 
 
 
-  const processedUnis = useMemo(() => universities.map((uni, idx) => ({
+  const processedUnis = useMemo(() => {
+    const seen = new Set();
+    return universities.reduce((acc, uni, idx) => {
+      const urlKey = uni.sourceUrl ? canonicalUniKey(uni.sourceUrl) : '';
+      const nameKey = normalizeUniName(uni.name);
+      const dedupeKey = urlKey || nameKey || `idx-${idx}`;
+      if (seen.has(dedupeKey)) return acc;
+      seen.add(dedupeKey);
 
-    ...uni,
+      acc.push({
+        ...uni,
+        id: urlKey || nameKey || `uni-${idx}`,
+        matchPercent: uni.matchScore ?? null,
+        minGpa: uni.minGpa != null ? Number(uni.minGpa) : null,
+        ieltsMin: uni.ieltsMin != null ? Number(uni.ieltsMin) : null,
+        tuitionFree: isTuitionFree(uni.tuition),
+      });
+      return acc;
+    }, []);
+  }, [universities]);
 
-    id: uni.sourceUrl || `uni-${idx}`,
-
-    matchPercent: uni.matchScore ?? null,
-
-    minGpa: uni.minGpa ?? null,
-
-    ieltsMin: uni.ieltsMin ?? null,
-
-    tuitionFee: typeof uni.tuition === 'string' && /free|€0|\$0/i.test(uni.tuition) ? 0 : 1,
-
-  })), [universities]);
-
-
-
-  const filteredUnis = processedUnis.filter((uni) => {
-
+  const filteredUnis = useMemo(() => processedUnis.filter((uni) => {
     if (countryFilter !== 'All' && uni.country !== countryFilter) return false;
-
     if (uni.minGpa != null && uni.minGpa > maxGpaFilter) return false;
-
-    if (freeTuitionOnly && uni.tuitionFee > 0) return false;
-
+    if (freeTuitionOnly && !uni.tuitionFree) return false;
     return true;
-
   }).sort((a, b) => {
-
     if (sortBy === 'match') return (b.matchPercent ?? -1) - (a.matchPercent ?? -1);
-
-    if (sortBy === 'gpa') return (a.minGpa ?? 0) - (b.minGpa ?? 0);
-
+    if (sortBy === 'gpa') return (a.minGpa ?? 999) - (b.minGpa ?? 999);
     return a.name.localeCompare(b.name);
-
-  });
+  }), [processedUnis, countryFilter, maxGpaFilter, freeTuitionOnly, sortBy]);
 
 
 
@@ -213,6 +236,19 @@ export default function UniversitiesPage() {
         title="Complete your profile first"
         description="University recommendations need your CGPA, target degree, and at least one preferred country."
       />
+    );
+  }
+
+  if (profileReady && aiQueueBlocksSend && universities.length === 0 && !fromCache) {
+    return (
+      <div className="min-h-screen bg-[#0F172A] text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full space-y-4">
+          <AiBusyBanner currentTask={aiQueue?.current_task} />
+          <p className="text-sm text-slate-400 text-center">
+            University recommendations will load automatically when Peri is free.
+          </p>
+        </div>
+      </div>
     );
   }
 
@@ -262,9 +298,13 @@ export default function UniversitiesPage() {
           <p className="text-sm font-semibold text-amber-200">Verify before you apply</p>
           <p className="text-xs text-amber-100/90 mt-1">{disclaimer}</p>
           <p className="text-[10px] text-amber-200/70 mt-2">
-            Match scores are only shown when Peri can compute them from verified data. Unverified results link to official sources — always confirm requirements yourself.
+            Links go to official university websites only. Match scores appear when Peri can compute them from verified data.
           </p>
         </div>
+
+        {aiQueueBlocksSend && (
+          <AiBusyBanner currentTask={aiQueue?.current_task} />
+        )}
 
         {fromCache && cacheAgeMin != null && (
           <div className="flex items-center justify-between gap-3 bg-[#1E293B]/80 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-400">
@@ -272,7 +312,8 @@ export default function UniversitiesPage() {
             <button
               type="button"
               onClick={handleRefresh}
-              className="inline-flex items-center gap-1.5 text-[#818cf8] hover:text-white font-semibold transition-colors"
+              disabled={aiQueueBlocksSend}
+              className="inline-flex items-center gap-1.5 text-[#818cf8] hover:text-white font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
@@ -387,9 +428,9 @@ export default function UniversitiesPage() {
 
                   <div className="flex justify-between text-xs text-slate-400">
 
-                    <span>Max Min-GPA Req</span>
+                    <span>Max required GPA</span>
 
-                    <span className="font-mono text-white font-bold">{maxGpaFilter}</span>
+                    <span className="font-mono text-white font-bold">{maxGpaFilter.toFixed(1)}</span>
 
                   </div>
 
@@ -410,6 +451,7 @@ export default function UniversitiesPage() {
                     className="w-full accent-[#6366F1]"
 
                   />
+                  <p className="text-[10px] text-slate-500">Shows programs requiring at most this GPA. Unknown requirements stay visible.</p>
 
                 </div>
 
@@ -462,6 +504,24 @@ export default function UniversitiesPage() {
             </div>
 
 
+
+            {filteredUnis.length === 0 && (
+              <div className="text-center py-10 bg-[#1E293B] border border-white/10 rounded-2xl">
+                <p className="text-sm text-slate-300">No universities match your current filters.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCountryFilter('All');
+                    setFreeTuitionOnly(false);
+                    setMaxGpaFilter(userGpa != null ? Number(userGpa) : 4.0);
+                    setSortBy('match');
+                  }}
+                  className="mt-3 text-xs font-semibold text-[#818cf8] hover:underline"
+                >
+                  Reset filters
+                </button>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
@@ -629,13 +689,24 @@ export default function UniversitiesPage() {
 
             <GraduationCap className="w-12 h-12 text-slate-600 mx-auto" />
 
-            <p className="text-slate-400 text-sm">No matches yet. Complete your profile in chat first.</p>
+            <p className="text-slate-400 text-sm">No university matches returned this time.</p>
+            <p className="text-slate-500 text-xs max-w-md mx-auto">
+              Try refreshing, or chat with Peri to refine your target countries and field of study.
+            </p>
 
-            <Link to="/chat" className="inline-flex items-center gap-2 text-[#818cf8] text-sm font-semibold hover:underline">
-
-              <MessageSquare className="w-4 h-4" /> Chat with Peri
-
-            </Link>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={aiQueueBlocksSend}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#6366F1] hover:bg-[#5558e3] rounded-xl text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className="w-4 h-4" /> Refresh
+              </button>
+              <Link to="/chat" className="inline-flex items-center gap-2 text-[#818cf8] text-sm font-semibold hover:underline">
+                <MessageSquare className="w-4 h-4" /> Chat with Peri
+              </Link>
+            </div>
 
           </div>
 

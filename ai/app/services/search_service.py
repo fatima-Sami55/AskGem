@@ -37,6 +37,69 @@ def extract_countries_from_message(message: str):
                 found.append(country.title())
     return found if found else None
 
+
+# Cities students commonly ask about → default country for search query building
+CITY_TO_COUNTRY = {
+    "frankfurt": "Germany",
+    "berlin": "Germany",
+    "munich": "Germany",
+    "munchen": "Germany",
+    "hamburg": "Germany",
+    "cologne": "Germany",
+    "koln": "Germany",
+    "köln": "Germany",
+    "stuttgart": "Germany",
+    "heidelberg": "Germany",
+    "dresden": "Germany",
+    "leipzig": "Germany",
+    "bonn": "Germany",
+    "aachen": "Germany",
+    "karlsruhe": "Germany",
+    "darmstadt": "Germany",
+    "freiburg": "Germany",
+    "hanover": "Germany",
+    "hannover": "Germany",
+    "nuremberg": "Germany",
+    "nurnberg": "Germany",
+    "amsterdam": "Netherlands",
+    "rotterdam": "Netherlands",
+    "utrecht": "Netherlands",
+    "paris": "France",
+    "lyon": "France",
+    "london": "UK",
+    "manchester": "UK",
+    "toronto": "Canada",
+    "vancouver": "Canada",
+    "montreal": "Canada",
+    "melbourne": "Australia",
+    "sydney": "Australia",
+    "stockholm": "Sweden",
+    "zurich": "Switzerland",
+    "geneva": "Switzerland",
+}
+
+
+def extract_locations_from_message(message: str) -> list:
+    """Extract city/location mentions from the user's message."""
+    if not message:
+        return []
+    msg_lower = message.lower()
+    found = []
+    seen = set()
+    for city_key, country in CITY_TO_COUNTRY.items():
+        if city_key in msg_lower and city_key not in seen:
+            seen.add(city_key)
+            display_city = city_key.title().replace("Koln", "Cologne").replace("Munchen", "Munich")
+            if city_key == "köln":
+                display_city = "Cologne"
+            found.append({"city": display_city, "country": country})
+    return found
+
+
+def message_has_location_intent(message: str) -> bool:
+    """True when the student names a city/location in their message."""
+    return len(extract_locations_from_message(message)) > 0
+
 def _extract_profile_fields(message: str, profile: dict) -> dict:
     """Safely extracts normalized profile attributes prioritizing message intent."""
     if not profile:
@@ -56,7 +119,10 @@ def _extract_profile_fields(message: str, profile: dict) -> dict:
     profile_countries = p.get("preferred_countries") or p.get("preferredCountries") or []
     if isinstance(profile_countries, str):
         profile_countries = [profile_countries]
-    countries = msg_countries or profile_countries
+
+    locations = extract_locations_from_message(message)
+    location_countries = [loc["country"] for loc in locations]
+    countries = msg_countries or location_countries or profile_countries
     
     majors = p.get("preferred_majors") or p.get("preferredMajors") or []
     if isinstance(majors, str):
@@ -72,6 +138,7 @@ def _extract_profile_fields(message: str, profile: dict) -> dict:
     return {
         "target_degree": target_degree,
         "countries": countries,
+        "locations": locations,
         "major": major_str,
         "gpa": gpa_str,
         "budget": budget
@@ -121,7 +188,21 @@ def build_search_queries(message: str, profile: dict) -> list:
     
     queries = []
     countries_to_use = p["countries"][:2] if p["countries"] else ["study abroad"]
-    
+    locations = p.get("locations") or []
+
+    # City-specific queries take priority when the student names a place
+    if locations:
+        for loc in locations[:2]:
+            city = loc["city"]
+            country = loc.get("country") or (countries_to_use[0] if countries_to_use else "Germany")
+            queries.append(
+                f"universities in {city} {country} {p['major']} {p['target_degree']} programs admission requirements {current_year}"
+            )
+            queries.append(
+                f"{city} {country} {p['major']} universities {p['target_degree']} international students {current_year}"
+            )
+            queries.append(f"Goethe University {city} {p['major']} admission" if city.lower() == "frankfurt" else f"top universities {city} {p['major']} {current_year}")
+
     if has_uni or (not has_schol and not has_visa):
         for country in countries_to_use:
             q1 = f"{p['target_degree']} programs in {country} for {p['major']}"
@@ -167,22 +248,23 @@ def build_search_queries(message: str, profile: dict) -> list:
             q += " international students"
             queries.append(q)
 
-    # Cap at 4 queries maximum, deduplicate
+    # Cap queries — chat should stay responsive (search runs before first token).
     unique_queries = []
     seen = set()
+    max_queries = 3 if locations else 4
     for q in queries:
         clean_q = re.sub(r'\s+', ' ', q).strip()
         if clean_q.lower() not in seen:
             seen.add(clean_q.lower())
             unique_queries.append(clean_q)
-        if len(unique_queries) >= 4:
+        if len(unique_queries) >= max_queries:
             break
             
     return unique_queries
 
 def _search_duckduckgo(query: str, max_results: int) -> list:
     """Fallback search using DuckDuckGo search library."""
-    logger.info(f"🦆 [SEARCH SERVICE] Executing DuckDuckGo search fallback for query='{query[:50]}...'")
+    logger.debug("[search] duckduckgo query=%s", query[:50])
     start = time.time()
     try:
         from duckduckgo_search import DDGS
@@ -197,10 +279,10 @@ def _search_duckduckgo(query: str, max_results: int) -> list:
                     "content": r.get("body", r.get("snippet", ""))
                 })
         duration = time.time() - start
-        logger.info(f"🦆 [SEARCH SERVICE] DuckDuckGo completed in {duration:.2f}s | Returned {len(results)} items.")
+        logger.debug("[search] duckduckgo done in %.2fs items=%s", duration, len(results))
         return results
     except Exception as e:
-        logger.error(f"❌ [SEARCH SERVICE] DuckDuckGo search fallback failed: {str(e)}")
+        logger.error("[search] duckduckgo failed: %s", str(e))
         return []
 
 def search(query: str, max_results: int = 5) -> list:
@@ -211,10 +293,10 @@ def search(query: str, max_results: int = 5) -> list:
     except Exception:
         tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
     if not tavily_key:
-        logger.warning("⚠️ [SEARCH SERVICE] TAVILY_API_KEY is not set in environment. Falling back directly to DuckDuckGo search.")
+        logger.warning("[search] TAVILY_API_KEY not set, using DuckDuckGo")
         return _search_duckduckgo(query, max_results)
     
-    logger.info(f"🌐 [SEARCH SERVICE] Executing Tavily API search for query='{query[:50]}...' (key: {tavily_key[:8]}...)")
+    logger.debug("[search] tavily query=%s", query[:50])
     start = time.time()
     try:
         from tavily import TavilyClient
@@ -229,10 +311,10 @@ def search(query: str, max_results: int = 5) -> list:
                 "content": r.get("content", "")
             })
         duration = time.time() - start
-        logger.info(f"🌐 [SEARCH SERVICE] Tavily API search succeeded in {duration:.2f}s | Returned {len(results)} items.")
+        logger.debug("[search] tavily done in %.2fs items=%s", duration, len(results))
         return results
     except Exception as e:
-        logger.warning(f"⚠️ [SEARCH SERVICE] Tavily search failed: {str(e)}. Falling back to DuckDuckGo.")
+        logger.warning("[search] tavily failed: %s, falling back to DuckDuckGo", str(e))
         return _search_duckduckgo(query, max_results)
 
 def search_for_context(queries: list) -> list:
@@ -241,7 +323,12 @@ def search_for_context(queries: list) -> list:
         return []
         
     all_raw_items = []
-    low_quality_domains = ["reddit.com", "quora.com", "medium.com", "facebook.com", "twitter.com", "linkedin.com", "forums.", "forum."]
+    low_quality_domains = [
+        "reddit.com", "quora.com", "medium.com", "facebook.com", "twitter.com", "linkedin.com",
+        "forums.", "forum.", "expatrio.com", "study.eu", "topuniversities.com", "mastersportal.com",
+        "bachelorsportal.com", "studyportals.com", "niche.com", "usnews.com", "timeshighereducation.com",
+        "yocket.com", "leverageedu.com", "shiksha.com", "collegedunia.com", "hotcourses",
+    ]
     
     for q in queries:
         try:
@@ -276,10 +363,15 @@ def search_for_context(queries: list) -> list:
             seen_urls.add(clean_url.lower())
             deduped.append(item)
             
-    # Prioritize .edu, official university, and government domains
+    # Prioritize official university and government domains
     def domain_priority(item):
         src = item["source"].lower()
+        title = item.get("title", "").lower()
+        if any(block in title for block in ("top 10", "top 50", "best universities", "ranking")):
+            return 3
         if ".edu" in src or ".gov" in src or ".ac." in src:
+            return 0
+        if "uni-" in src or src.startswith("tu-") or "tum.de" in src or "lmu.de" in src:
             return 0
         return 1
         

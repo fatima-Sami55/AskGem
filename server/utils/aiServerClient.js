@@ -2,6 +2,8 @@
  * Shared helpers for Node → FastAPI internal API calls.
  */
 
+const AppError = require('./appError');
+
 const getAiServerHeaders = () => {
   const headers = { 'Content-Type': 'application/json' };
   const secret = process.env.AI_SERVER_SECRET || process.env.INTERNAL_API_KEY;
@@ -11,7 +13,11 @@ const getAiServerHeaders = () => {
   return headers;
 };
 
-const getAiServerUrl = () => process.env.AI_SERVER_URL || 'http://127.0.0.1:8000';
+const getAiServerUrl = () => {
+  const raw = process.env.AI_SERVER_URL || 'http://127.0.0.1:8000';
+  // Windows: localhost often resolves to ::1 while uvicorn binds 127.0.0.1 only
+  return raw.replace(/\/\/localhost\b/i, '//127.0.0.1');
+};
 
 const summarizeSessionMemory = async (userId, sessionId, messages) => {
   if (!messages || messages.length === 0) return;
@@ -54,9 +60,35 @@ const deleteSessionMemory = async (userId, sessionId) => {
   }
 };
 
+const getAiQueueStatus = async () => {
+  try {
+    const res = await fetch(`${getAiServerUrl()}/health/queue`, {
+      headers: getAiServerHeaders(),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return { busy: false, current_task: null };
+    return res.json();
+  } catch {
+    return { busy: false, current_task: null };
+  }
+};
+
+const assertAiAvailable = async () => {
+  const status = await getAiQueueStatus();
+  if (status.busy) {
+    throw new AppError(
+      `AI is busy with ${status.current_task || 'another task'}. Please wait and try again.`,
+      429,
+    );
+  }
+  return status;
+};
+
 module.exports = {
   getAiServerHeaders,
   getAiServerUrl,
+  getAiQueueStatus,
+  assertAiAvailable,
   summarizeSessionMemory,
   deleteSessionMemory,
 };

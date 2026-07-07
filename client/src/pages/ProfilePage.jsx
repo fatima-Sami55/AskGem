@@ -139,7 +139,7 @@ function CountryDropdown({ selected, onSelect, onRemove, error }) {
 }
 
 export default function ProfilePage() {
-  const { user, fetchProfile } = useProfile();
+  const { user, fetchProfile, setUser } = useProfile();
   const { lastScoreUpdated } = useChat();
   const navigate = useNavigate();
 
@@ -171,54 +171,64 @@ export default function ProfilePage() {
     avatar: 'default-pfp.png'
   });
 
-  const loadProfileData = async () => {
-    setLoading(true);
+  const applyProfileResponse = (u, bd) => {
+    setBreakdownData(bd);
+    setUser(u);
+
+    const p = u.profile || {};
+    const et = p.englishTest || {};
+    const usdBudget = p.maxBudget !== null && p.maxBudget !== undefined ? p.maxBudget : '';
+    const pkrVal = usdBudget !== '' ? Math.round(Number(usdBudget) * PKR_TO_USD) : '';
+
+    setFormData({
+      name: u.name || '',
+      gpa: p.gpa !== null && p.gpa !== undefined ? String(p.gpa) : '',
+      educationLevel: p.educationLevel || 'Undergraduate',
+      targetDegree: p.targetDegree || 'Masters',
+      major: p.major || '',
+      preferredCountries: p.preferredCountries || [],
+      budgetPkr: pkrVal !== '' ? formatPkr(pkrVal) : '',
+      englishTestType: et.testType || 'None',
+      englishTestScore: et.score !== null && et.score !== undefined ? String(et.score) : '',
+      workExperience: mapWorkExpToDropdown(p.workExperience),
+      researchExperience: Boolean(p.researchExperience),
+      publications: String(p.publications !== undefined ? p.publications : 0),
+      age: p.age !== null && p.age !== undefined ? String(p.age) : '',
+      avatar: p.avatar || 'default-pfp.png'
+    });
+  };
+
+  const loadProfileData = async ({ showLoader = true } = {}) => {
+    if (showLoader) setLoading(true);
     try {
       const res = await api.get('/profile');
       if (res.data && res.data.data) {
-        const u = res.data.data.user;
-        const bd = res.data.data.breakdown;
-        setBreakdownData(bd);
-
-        const p = u.profile || {};
-        const et = p.englishTest || {};
-        const usdBudget = p.maxBudget !== null && p.maxBudget !== undefined ? p.maxBudget : '';
-        const pkrVal = usdBudget !== '' ? Math.round(Number(usdBudget) * PKR_TO_USD) : '';
-
-        setFormData({
-          name: u.name || '',
-          gpa: p.gpa !== null && p.gpa !== undefined ? String(p.gpa) : '',
-          educationLevel: p.educationLevel || 'Undergraduate',
-          targetDegree: p.targetDegree || 'Masters',
-          major: p.major || '',
-          preferredCountries: p.preferredCountries || [],
-          budgetPkr: pkrVal !== '' ? formatPkr(pkrVal) : '',
-          englishTestType: et.testType || 'None',
-          englishTestScore: et.score !== null && et.score !== undefined ? String(et.score) : '',
-          workExperience: mapWorkExpToDropdown(p.workExperience),
-          researchExperience: Boolean(p.researchExperience),
-          publications: String(p.publications !== undefined ? p.publications : 0),
-          age: p.age !== null && p.age !== undefined ? String(p.age) : '',
-          avatar: p.avatar || 'default-pfp.png'
-        });
-        if (fetchProfile) fetchProfile();
+        applyProfileResponse(res.data.data.user, res.data.data.breakdown);
       }
     } catch (err) {
       console.error('Failed to load profile data:', err);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadProfileData();
+    loadProfileData({ showLoader: true });
 
     const handleFocus = () => {
-      loadProfileData();
+      loadProfileData({ showLoader: false });
     };
 
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  const prevScoreUpdated = useRef(null);
+  useEffect(() => {
+    if (prevScoreUpdated.current !== null && prevScoreUpdated.current !== lastScoreUpdated) {
+      loadProfileData({ showLoader: false });
+    }
+    prevScoreUpdated.current = lastScoreUpdated;
   }, [lastScoreUpdated]);
 
   // Auto-save draft to localStorage every 30 seconds
@@ -461,7 +471,7 @@ export default function ProfilePage() {
         setBreakdownData(res.data.data.breakdown);
       }
 
-      if (fetchProfile) await fetchProfile();
+      if (fetchProfile) await fetchProfile({ silent: true });
 
       setIsDirty(false);
       localStorage.removeItem('askperi_profile_draft');
