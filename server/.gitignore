@@ -1,0 +1,11 @@
+# Defaults
+node_modules
+.env
+
+# MacOS
+.DS_Store
+
+# Logs
+logs
+*.log
+npm-debug.log*

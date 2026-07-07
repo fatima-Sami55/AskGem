@@ -1,0 +1,157 @@
+/* Respect reduced motion — these are supplemental to the JS-computed static
+   fallbacks already in motionStyles, so only run when motion is OK. */
+@media (prefers-reduced-motion: no-preference) {
+
+  /* ===== WAVING ===== */
+  @keyframes mascot-wave-wing {
+    0%, 100% { transform: rotate(-30deg); }
+    50%      { transform: rotate(-58deg); }
+  }
+  .mascot-svg.waving-action .mascot-part-wing-r {
+    animation: mascot-wave-wing 0.5s ease-in-out infinite;
+    transform-origin: 348px 244px;
+  }
+
+  /* ===== CELEBRATING ===== */
+  @keyframes mascot-celebrate-body {
+    0%, 100% { transform: translateY(0px); }
+    50%      { transform: translateY(-14px); }
+  }
+  @keyframes mascot-celebrate-head {
+    0%, 100% { transform: translateY(0px); }
+    50%      { transform: translateY(-14px); }
+  }
+  @keyframes mascot-celebrate-wing-l {
+    0%, 100% { transform: rotate(-50deg); }
+    50%      { transform: rotate(-70deg); }
+  }
+  @keyframes mascot-celebrate-wing-r {
+    0%, 100% { transform: rotate(50deg); }
+    50%      { transform: rotate(70deg); }
+  }
+  @keyframes mascot-celebrate-foot-l {
+    0%, 100% { transform: rotate(8deg) translateY(0px); }
+    50%      { transform: rotate(14deg) translateY(-3px); }
+  }
+  @keyframes mascot-celebrate-foot-r {
+    0%, 100% { transform: rotate(-8deg) translateY(0px); }
+    50%      { transform: rotate(-14deg) translateY(-3px); }
+  }
+  .mascot-svg.celebrating-action .mascot-body-group  { animation: mascot-celebrate-body 0.45s ease-in-out infinite; transform-origin: 274px 300px; }
+  .mascot-svg.celebrating-action .mascot-head        { animation: mascot-celebrate-head 0.45s ease-in-out infinite; transform-origin: 260px 150px; }
+  .mascot-svg.celebrating-action .mascot-part-wing-l { animation: mascot-celebrate-wing-l 0.45s ease-in-out infinite; transform-origin: 164px 244px; }
+  .mascot-svg.celebrating-action .mascot-part-wing-r { animation: mascot-celebrate-wing-r 0.45s ease-in-out infinite; transform-origin: 348px 244px; }
+  .mascot-svg.celebrating-action .mascot-part-foot-l { animation: mascot-celebrate-foot-l 0.45s ease-in-out infinite; transform-origin: 335px 440px; }
+  .mascot-svg.celebrating-action .mascot-part-foot-r { animation: mascot-celebrate-foot-r 0.45s ease-in-out infinite; transform-origin: 180px 442px; }
+
+  /* ===== DANCING ===== */
+  @keyframes mascot-dance-body {
+    0%, 100% { transform: translateX(-8px) rotate(-4deg); }
+    50%      { transform: translateX(8px) rotate(4deg); }
+  }
+  @keyframes mascot-dance-head {
+    0%, 100% { transform: translateX(-8px); }
+    50%      { transform: translateX(8px); }
+  }
+  @keyframes mascot-dance-wing-l {
+    0%, 100% { transform: rotate(-15deg); }
+    50%      { transform: rotate(-45deg); }
+  }
+  @keyframes mascot-dance-wing-r {
+    0%, 100% { transform: rotate(15deg); }
+    50%      { transform: rotate(45deg); }
+  }
+  @keyframes mascot-dance-foot-l {
+    0%, 100% { transform: translateY(-2px); }
+    50%      { transform: translateY(0px); }
+  }
+  @keyframes mascot-dance-foot-r {
+    0%, 100% { transform: translateY(0px); }
+    50%      { transform: translateY(-2px); }
+  }
+  .mascot-svg.dancing-action .mascot-body-group  { animation: mascot-dance-body 0.6s ease-in-out infinite; transform-origin: 274px 300px; }
+  .mascot-svg.dancing-action .mascot-head        { animation: mascot-dance-head 0.6s ease-in-out infinite; transform-origin: 260px 150px; }
+  .mascot-svg.dancing-action .mascot-part-wing-l { animation: mascot-dance-wing-l 0.6s ease-in-out infinite; transform-origin: 164px 244px; }
+  .mascot-svg.dancing-action .mascot-part-wing-r { animation: mascot-dance-wing-r 0.6s ease-in-out infinite; transform-origin: 348px 244px; }
+  .mascot-svg.dancing-action .mascot-part-foot-l { animation: mascot-dance-foot-l 0.6s ease-in-out infinite; transform-origin: 335px 440px; }
+  .mascot-svg.dancing-action .mascot-part-foot-r { animation: mascot-dance-foot-r 0.6s ease-in-out infinite; transform-origin: 180px 442px; }
+
+  /* ===== WRITING ===== */
+  @keyframes mascot-write-wing {
+    0%, 100% { transform: rotate(10deg); }
+    50%      { transform: rotate(22deg); }
+  }
+  .mascot-svg.writing-action .mascot-part-wing-r {
+    animation: mascot-write-wing 0.35s ease-in-out infinite;
+    transform-origin: 348px 244px;
+  }
+
+  /* ===== SLEEPING ===== */
+  @keyframes mascot-cap-sway {
+    0%, 100% { transform: rotate(0deg); }
+    50%      { transform: rotate(3deg); }
+  }
+  .sleeping-action .mascot-accessory-sleepingcap {
+    animation: mascot-cap-sway 2.5s ease-in-out infinite;
+    transform-origin: 256px 430px;
+  }
+}
+
+/* Reusable MascotLoader styles */
+.mascot-loader-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 11, 20, 0.92);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  gap: 16px;
+}
+
+.mascot-loader-label {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-10px); }
+}
+
+/* Confetti animation */
+.confetti {
+  position: absolute;
+  width: 10px;
+  height: 6px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: confetti-fall 1.8s ease-out infinite;
+}
+.confetti.c1 { left: 20%; background: #39B1D1; animation-delay: 0s; }
+.confetti.c2 { left: 40%; background: #D6FB61; animation-delay: 0.3s; }
+.confetti.c3 { left: 60%; background: #F6850C; animation-delay: 0.1s; }
+.confetti.c4 { left: 80%; background: #DE3E3E; animation-delay: 0.4s; }
+.confetti.c5 { left: 30%; background: #ff4757; animation-delay: 0.2s; }
+.confetti.c6 { left: 50%; background: #2ed573; animation-delay: 0.5s; }
+.confetti.c7 { left: 70%; background: #ffa502; animation-delay: 0.15s; }
+.confetti.c8 { left: 90%; background: #1e90ff; animation-delay: 0.35s; }
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-40px) rotate(0deg) scale(0);
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(180px) rotate(360deg) scale(1);
+    opacity: 0;
+  }
+}

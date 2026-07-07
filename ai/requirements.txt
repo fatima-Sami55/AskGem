@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+chromadb
+requests
+python-dotenv
+pydantic
+tavily-python
+duckduckgo-search
+httpx
