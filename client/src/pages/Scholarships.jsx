@@ -6,6 +6,7 @@ import { useProfile } from '../context/ProfileContext';
 import { useChat } from '../context/ChatContext';
 import api from '../services/api';
 import AiBusyBanner from '../components/features/AiBusyBanner';
+import RecommendationsBusyState from '../components/features/RecommendationsBusyState';
 
 import {
   fetchRecommendationsCached,
@@ -17,6 +18,7 @@ import {
 import { isProfileReadyForRecommendations } from '../utils/profileGates';
 import { loadBookmarks, toggleBookmark, isBookmarked } from '../services/bookmarks';
 import ProfileIncompleteState from '../components/features/ProfileIncompleteState';
+import AppShell from '../components/AppShell';
 
 import {
 
@@ -196,14 +198,13 @@ export default function ScholarshipsPage() {
 
   if (profileReady && aiQueueBlocksSend && scholarships.length === 0 && !fromCache) {
     return (
-      <div className="min-h-screen bg-[#0F172A] text-white flex items-center justify-center p-6">
-        <div className="max-w-md w-full space-y-4">
-          <AiBusyBanner currentTask={aiQueue?.current_task} />
-          <p className="text-sm text-slate-400 text-center">
-            Scholarship recommendations will load automatically when Peri is free.
-          </p>
-        </div>
-      </div>
+      <RecommendationsBusyState
+        title={`Scholarships for ${displayName}`}
+        icon={Award}
+        iconClassName="text-amber-400"
+        currentTask={aiQueue?.current_task}
+        itemLabel="scholarship recommendations"
+      />
     );
   }
 
@@ -216,38 +217,9 @@ export default function ScholarshipsPage() {
 
 
   return (
-
-    <div className="min-h-screen bg-[#0F172A] text-white font-sans">
-
-      <header className="sticky top-0 z-20 bg-[#1E293B]/90 backdrop-blur border-b border-white/10 px-6 h-16 flex items-center justify-between">
-
-        <button
-
-          type="button"
-
-          onClick={() => navigate('/chat')}
-
-          className="flex items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white transition-colors"
-
-        >
-
-          <ArrowLeft className="w-4 h-4 text-[#6366F1]" /> Back to Chat
-
-        </button>
-
-        <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
-
-          <Award className="w-5 h-5 text-amber-400" /> Scholarships for {displayName}
-
-        </h1>
-
-        <div className="w-20" />
-
-      </header>
-
-
-
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <AppShell title={`Scholarships for ${displayName}`}>
+    <div className="font-sans">
+      <div className="max-w-6xl mx-auto px-4 lg:px-8 py-8 space-y-6">
 
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4">
           <p className="text-sm font-semibold text-amber-200">Verify before you apply</p>
@@ -262,7 +234,7 @@ export default function ScholarshipsPage() {
         )}
 
         {fromCache && cacheAgeMin != null && (
-          <div className="flex items-center justify-between gap-3 bg-[#1E293B]/80 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-400">
+          <div className="flex items-center justify-between gap-3 bg-[#16162a]/80 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-400">
             <span>Last updated {cacheAgeMin === 0 ? 'just now' : `${cacheAgeMin} min ago`}</span>
             <button
               type="button"
@@ -275,7 +247,7 @@ export default function ScholarshipsPage() {
           </div>
         )}
 
-        <div className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="bg-[#16162a] border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
 
           <div>
 
@@ -287,7 +259,7 @@ export default function ScholarshipsPage() {
 
           {!error && (
 
-            <div className="flex items-center gap-2 bg-[#0F172A] px-4 py-2.5 rounded-xl border border-white/5 text-xs font-semibold text-slate-300">
+            <div className="flex items-center gap-2 bg-[#0f0f1a] px-4 py-2.5 rounded-xl border border-white/5 text-xs font-semibold text-slate-300">
 
               <Award className="w-4 h-4 text-emerald-400" />
 
@@ -319,7 +291,7 @@ export default function ScholarshipsPage() {
 
             </div>
 
-            <Link to="/chat" className="flex items-center gap-2 px-4 py-2 bg-[#6366F1] hover:bg-[#5558e3] rounded-xl text-xs font-bold transition-colors whitespace-nowrap">
+            <Link to="/chat" className="flex items-center gap-2 px-4 py-2 bg-[#6366F1] hover:bg-[#5558DD] text-[#0f0f1a] rounded-xl text-xs font-bold transition-colors whitespace-nowrap">
 
               <MessageSquare className="w-4 h-4" /> Go to Chat
 
@@ -335,7 +307,7 @@ export default function ScholarshipsPage() {
 
           <>
 
-            <div className="bg-[#1E293B] border border-white/10 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="bg-[#16162a] border border-white/10 rounded-2xl p-5 shadow-xl space-y-4">
 
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-white/10 pb-3">
 
@@ -355,7 +327,7 @@ export default function ScholarshipsPage() {
 
                     onChange={(e) => setCountryFilter(e.target.value)}
 
-                    className="w-full bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
+                    className="w-full bg-[#0f0f1a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
 
                   >
 
@@ -375,7 +347,7 @@ export default function ScholarshipsPage() {
 
                     onChange={(e) => setFundingFilter(e.target.value)}
 
-                    className="w-full bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
+                    className="w-full bg-[#0f0f1a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
 
                   >
 
@@ -399,7 +371,7 @@ export default function ScholarshipsPage() {
 
                     onChange={(e) => setSortBy(e.target.value)}
 
-                    className="w-full bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
+                    className="w-full bg-[#0f0f1a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
 
                   >
 
@@ -439,7 +411,7 @@ export default function ScholarshipsPage() {
 
                     key={id}
 
-                    className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 shadow-xl space-y-4 hover:border-[#6366F1]/50 transition-all flex flex-col justify-between"
+                    className="bg-[#16162a] border border-white/10 rounded-2xl p-6 shadow-xl space-y-4 hover:border-[#6366F1]/50 transition-all flex flex-col justify-between"
 
                   >
 
@@ -473,7 +445,7 @@ export default function ScholarshipsPage() {
 
                           onClick={() => toggleSave(item, id)}
 
-                          className={`p-2 rounded-xl border transition-all ${isSaved ? 'bg-amber-500/20 border-amber-400 text-amber-400' : 'bg-[#0F172A] border-white/10 text-slate-400 hover:text-white'}`}
+                          className={`p-2 rounded-xl border transition-all ${isSaved ? 'bg-[#6366F1]/20 border-[#6366F1] text-[#6366F1]' : 'bg-[#0f0f1a] border-white/10 text-slate-400 hover:text-white'}`}
 
                         >
 
@@ -485,7 +457,7 @@ export default function ScholarshipsPage() {
 
 
 
-                      <div className="bg-[#0F172A] p-3 rounded-xl border border-white/5 space-y-1.5">
+                      <div className="bg-[#0f0f1a] p-3 rounded-xl border border-white/5 space-y-1.5">
 
                         <div className="flex justify-between items-center text-xs">
 
@@ -511,7 +483,7 @@ export default function ScholarshipsPage() {
 
                       {item.coverage && (
 
-                        <div className="bg-[#0F172A] p-3.5 rounded-xl border border-white/5 space-y-1">
+                        <div className="bg-[#0f0f1a] p-3.5 rounded-xl border border-white/5 space-y-1">
 
                           <span className="text-slate-500 block text-[10px] uppercase font-bold">Coverage</span>
 
@@ -527,7 +499,7 @@ export default function ScholarshipsPage() {
 
 
 
-                      <div className="text-xs text-slate-300 space-y-1 bg-[#0F172A]/40 p-3 rounded-xl border border-white/5">
+                      <div className="text-xs text-slate-300 space-y-1 bg-[#0f0f1a]/40 p-3 rounded-xl border border-white/5">
 
                         {item.eligibility && (
 
@@ -612,11 +584,9 @@ export default function ScholarshipsPage() {
         )}
 
       </div>
-
     </div>
-
+    </AppShell>
   );
-
 }
 
 

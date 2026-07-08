@@ -65,7 +65,7 @@ export default function ProfileScoreCard({ refreshTrigger }) {
 
   if (loading && !scoreData) {
     return (
-      <div className="w-full bg-[#0F172A] border border-white/10 rounded-2xl p-6 shadow-xl animate-pulse space-y-4 text-white">
+      <div className="w-full bg-[#0f0f1a] border border-white/10 rounded-2xl p-6 shadow-xl animate-pulse space-y-4 text-white">
         <div className="h-6 bg-slate-800 rounded w-1/3"></div>
         <div className="h-16 bg-slate-800 rounded-xl w-full"></div>
         <div className="h-4 bg-slate-800 rounded w-1/2"></div>
@@ -86,7 +86,7 @@ export default function ProfileScoreCard({ refreshTrigger }) {
   const currentColor = getScoreColor(score);
 
   return (
-    <div className={`w-full bg-[#0F172A] border rounded-2xl p-6 shadow-xl text-white font-sans space-y-6 transition-all duration-300 ${isRefreshing ? 'border-[#6366F1] shadow-[#6366F1]/20 animate-pulse' : 'border-white/10'}`}>
+    <div className={`w-full bg-[#0f0f1a] border rounded-2xl p-6 shadow-xl text-white font-sans space-y-6 transition-all duration-300 ${isRefreshing ? 'border-[#6366F1] shadow-[#6366F1]/20 animate-pulse' : 'border-white/10'}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -105,7 +105,7 @@ export default function ProfileScoreCard({ refreshTrigger }) {
       </div>
 
       {/* Main Score Display */}
-      <div className="bg-[#1E293B] rounded-xl p-5 border border-white/5 space-y-3">
+      <div className="bg-[#16162a] rounded-xl p-5 border border-white/5 space-y-3">
         <div className="flex items-baseline justify-between">
           <div className="flex items-baseline gap-1">
             <span className="text-4xl font-extrabold tracking-tight transition-all duration-300" style={{ color: currentColor }}>

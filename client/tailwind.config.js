@@ -7,6 +7,15 @@ export default {
     theme: {
         extend: {
             colors: {
+                peri: {
+                    DEFAULT: '#39B1D1',
+                    hover: '#2da0bf',
+                    dark: '#228fa9',
+                },
+                link: {
+                    DEFAULT: '#818cf8',
+                    accent: '#6366F1',
+                },
                 border: "hsl(var(--border))",
                 input: "hsl(var(--input))",
                 ring: "hsl(var(--ring))",

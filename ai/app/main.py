@@ -21,7 +21,16 @@ logging.basicConfig(level=getattr(logging, _log_level, logging.INFO))
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("main")
 
-app = FastAPI(title="AskPeri AI Server", version="1.0.0")
+_IS_DEV = os.getenv("NODE_ENV", "development").lower() in ("development", "dev", "test")
+_docs_enabled = _IS_DEV and os.getenv("ASKPERI_ENABLE_API_DOCS", "1").lower() in ("1", "true", "yes")
+
+app = FastAPI(
+    title="AskPeri AI Server",
+    version="1.0.0",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 
 # CORS Middleware Setup
 origins = [

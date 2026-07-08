@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useProfile } from '../context/ProfileContext';
-import { clearBookmarks } from '../services/bookmarks';
 import { invalidateRecommendationsCache } from '../services/recommendationsCache';
+import { clearAllAskperiLocalStorage } from '../utils/askperiStorage';
+import ClearDataModal from '../components/ui/ClearDataModal';
+import AppShell from '../components/AppShell';
 import {
   ArrowLeft, Activity, Key, FolderOpen, Trash2, Download, AlertTriangle, CheckCircle2,
 } from 'lucide-react';
@@ -29,6 +31,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
   const [message, setMessage] = useState(null);
 
   const loadData = useCallback(async () => {
@@ -41,7 +44,7 @@ export default function SettingsPage() {
       setHealth(healthRes.data);
       const settingsData = settingsRes.data?.data || null;
       setSettings(settingsData);
-      setTavilyKey(settingsData?.tavilyApiKey || '');
+      setTavilyKey('');
     } catch (err) {
       setMessage({ type: 'error', text: 'Could not load settings.' });
     } finally {
@@ -59,7 +62,7 @@ export default function SettingsPage() {
     try {
       await api.put('/settings/tavily', { tavilyApiKey: tavilyKey.trim() });
       await loadData();
-      setMessage({ type: 'success', text: 'Tavily key saved. Restart the AI server if search does not update immediately.' });
+      setMessage({ type: 'success', text: 'Tavily key saved to ai/.env.' });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to save key.' });
     } finally {
@@ -68,7 +71,9 @@ export default function SettingsPage() {
   };
 
   const handleRemoveTavily = async () => {
-    const confirmed = window.confirm('Remove the saved Tavily API key?');
+    const confirmed = window.confirm(
+      'Remove the Tavily API key from ai/.env?',
+    );
     if (!confirmed) return;
 
     setSavingKey(true);
@@ -77,7 +82,7 @@ export default function SettingsPage() {
       await api.put('/settings/tavily', { tavilyApiKey: '' });
       setTavilyKey('');
       await loadData();
-      setMessage({ type: 'success', text: 'Tavily key removed.' });
+      setMessage({ type: 'success', text: 'Tavily key removed from ai/.env.' });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to remove key.' });
     } finally {
@@ -97,18 +102,16 @@ export default function SettingsPage() {
   };
 
   const handleClearAll = async () => {
-    const confirmed = window.confirm(
-      'This will delete your profile, all chat sessions, AI memory, bookmarks, and cached recommendations. Continue?',
-    );
-    if (!confirmed) return;
-
     setClearing(true);
     setMessage(null);
     try {
-      await api.post('/settings/clear-all');
-      clearBookmarks();
+      await api.post('/settings/clear-all', null, {
+        headers: { 'X-AskPeri-Confirm': 'clear-all' },
+      });
+      clearAllAskperiLocalStorage();
       invalidateRecommendationsCache();
       await fetchProfile({ silent: true });
+      setShowClearModal(false);
       setMessage({ type: 'success', text: 'All local data cleared. Reloading…' });
       setTimeout(() => {
         window.location.href = '/';
@@ -123,20 +126,9 @@ export default function SettingsPage() {
   const ai = health?.ai || {};
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-white font-sans">
-      <header className="sticky top-0 z-20 bg-[#1E293B]/90 backdrop-blur border-b border-white/10 px-6 h-16 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => navigate('/chat')}
-          className="flex items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4 text-[#6366F1]" /> Back
-        </button>
-        <h1 className="text-base font-bold">Settings</h1>
-        <div className="w-12" />
-      </header>
-
-      <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+    <AppShell title="Settings">
+    <div className="font-sans">
+      <div className="max-w-4xl xl:max-w-5xl mx-auto px-4 lg:px-8 py-8 space-y-6">
         {message && (
           <div className={`rounded-xl px-4 py-3 text-sm flex items-start gap-2 ${message.type === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-300' : 'bg-green-500/10 border border-green-500/30 text-green-300'}`}>
             {message.type === 'error' ? <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" /> : <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />}
@@ -144,9 +136,9 @@ export default function SettingsPage() {
           </div>
         )}
 
-        <section className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 space-y-3">
+        <section className="bg-[#16162a] border border-white/10 rounded-2xl p-6 space-y-3">
           <div className="flex items-center gap-2 mb-2">
-            <Activity className="w-5 h-5 text-[#39B1D1]" />
+            <Activity className="w-5 h-5 text-[#6366F1]" />
             <h2 className="text-lg font-bold">Health status</h2>
           </div>
           {loading ? (
@@ -161,7 +153,7 @@ export default function SettingsPage() {
           )}
         </section>
 
-        <section className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 space-y-4">
+        <section className="bg-[#16162a] border border-white/10 rounded-2xl p-6 space-y-4">
           <div className="flex items-center gap-2">
             <Key className="w-5 h-5 text-amber-400" />
             <h2 className="text-lg font-bold">Tavily API key (optional)</h2>
@@ -169,27 +161,33 @@ export default function SettingsPage() {
           <p className="text-xs text-slate-400 leading-relaxed">
             Improves web search quality. Without it, AskPeri falls back to DuckDuckGo with generalized queries.
             Get a key at{' '}
-            <a href="https://tavily.com" target="_blank" rel="noreferrer" className="text-[#39B1D1] underline">
+            <a href="https://tavily.com" target="_blank" rel="noreferrer" className="text-[#6366F1] underline">
               tavily.com
             </a>
-            . You can also set <code className="text-[#818cf8]">TAVILY_API_KEY</code> in <code className="text-[#818cf8]">ai/.env</code>.
+            . You can also set <code className="text-[#818cf8]">TAVILY_API_KEY</code> directly in <code className="text-[#818cf8]">ai/.env</code>.
           </p>
-          {settings?.tavilyConfigured && (
-            <p className="text-xs text-green-400">
-              {settings.tavilySource === 'ai-env'
-                ? 'Loaded from ai/.env. Edit below and save to store in settings.'
-                : settings.tavilySource === 'server-env'
-                  ? 'Loaded from server/.env. Edit below and save to store in settings.'
-                  : 'A Tavily key is configured. Edit below to update it.'}
-            </p>
+          {loading ? (
+            <p className="text-xs text-slate-400">Checking Tavily key…</p>
+          ) : settings?.tavilyConfigured ? (
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-green-400">Tavily key found</p>
+              {settings.tavilyMasked && (
+                <p className="text-xs text-slate-400">
+                  Key ending <code className="text-[#818cf8]">{settings.tavilyMasked}</code>
+                  {' — stored in ai/.env'}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm font-semibold text-amber-300">No key found</p>
           )}
           <div className="relative">
             <input
               type={showTavilyKey ? 'text' : 'password'}
               value={tavilyKey}
               onChange={(e) => setTavilyKey(e.target.value)}
-              placeholder="tvly-..."
-              className="w-full bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2.5 pr-20 text-sm focus:outline-none focus:border-[#39B1D1]"
+              placeholder={settings?.tavilyConfigured ? 'Enter new key to update…' : 'tvly-...'}
+              className="w-full bg-[#0f0f1a] border border-white/10 rounded-xl px-3 py-2.5 pr-20 text-sm focus:outline-none focus:border-[#6366F1]"
             />
             <button
               type="button"
@@ -204,36 +202,34 @@ export default function SettingsPage() {
               type="button"
               onClick={handleSaveTavily}
               disabled={savingKey || !tavilyKey.trim()}
-              className="px-4 py-2 rounded-xl bg-[#39B1D1] hover:bg-[#2da0bf] disabled:opacity-50 text-sm font-semibold transition-colors"
+              className="px-4 py-2 rounded-xl bg-[#6366F1] hover:bg-[#5558DD] disabled:opacity-50 text-[#0f0f1a] text-sm font-semibold transition-colors"
             >
               {savingKey ? 'Saving…' : settings?.tavilyConfigured ? 'Update key' : 'Save key'}
             </button>
-            {settings?.tavilyConfigured && (
-              <button
-                type="button"
-                onClick={handleRemoveTavily}
-                disabled={savingKey}
-                className="px-4 py-2 rounded-xl border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-50 text-sm font-semibold transition-colors"
-              >
-                Remove key
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleRemoveTavily}
+              disabled={savingKey || !settings?.tavilyConfigured}
+              className="px-4 py-2 rounded-xl border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-50 text-sm font-semibold transition-colors"
+            >
+              Remove key
+            </button>
           </div>
         </section>
 
-        <section className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 space-y-3">
+        <section className="bg-[#16162a] border border-white/10 rounded-2xl p-6 space-y-3">
           <div className="flex items-center gap-2">
             <FolderOpen className="w-5 h-5 text-[#818cf8]" />
             <h2 className="text-lg font-bold">Data directory</h2>
           </div>
           <p className="text-xs text-slate-400">Profile and sessions are stored here:</p>
-          <code className="block text-xs bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2.5 text-[#39B1D1] break-all">
+          <code className="block text-xs bg-[#0f0f1a] border border-white/10 rounded-xl px-3 py-2.5 text-[#6366F1] break-all">
             {settings?.dataDir || '…'}
           </code>
-          <p className="text-[10px] text-slate-500">Chroma vectors: <span className="text-slate-400">{settings?.chromaPath || './ai/chroma_data'}</span></p>
+          <p className="text-[10px] text-slate-500">Chroma vectors: <span className="text-slate-400">{settings?.chromaPath || './data/chroma_data'}</span></p>
         </section>
 
-        <section className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 space-y-4">
+        <section className="bg-[#16162a] border border-white/10 rounded-2xl p-6 space-y-4">
           <div className="flex items-center gap-2">
             <Download className="w-5 h-5 text-[#34D399]" />
             <h2 className="text-lg font-bold">Export profile</h2>
@@ -249,22 +245,22 @@ export default function SettingsPage() {
           </button>
         </section>
 
-        <section className="bg-[#1E293B] border border-red-500/20 rounded-2xl p-6 space-y-4">
+        <section className="bg-[#16162a] border border-red-500/20 rounded-2xl p-6 space-y-4">
           <div className="flex items-center gap-2">
             <Trash2 className="w-5 h-5 text-red-400" />
             <h2 className="text-lg font-bold text-red-300">Clear all data</h2>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Wipes SQLite profile and sessions, Chroma memory, bookmarks, and recommendation caches.
-            You will see the onboarding wizard again.
+            Wipes SQLite profile and sessions, Chroma memory, Tavily key in ai/.env,
+            bookmarks, recommendation caches, and local profile drafts. You will see the onboarding wizard again.
           </p>
           <button
             type="button"
-            onClick={handleClearAll}
+            onClick={() => setShowClearModal(true)}
             disabled={clearing}
             className="px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30 disabled:opacity-50 text-sm font-semibold transition-colors"
           >
-            {clearing ? 'Clearing…' : 'Clear all data'}
+            Clear all data
           </button>
         </section>
 
@@ -274,6 +270,15 @@ export default function SettingsPage() {
           <Link to="/chat" className="text-[#818cf8] hover:underline">Chat</Link>
         </p>
       </div>
+
+      <ClearDataModal
+        isOpen={showClearModal}
+        onClose={() => setShowClearModal(false)}
+        onConfirm={handleClearAll}
+        onExport={handleExportProfile}
+        clearing={clearing}
+      />
     </div>
+    </AppShell>
   );
 }

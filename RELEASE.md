@@ -60,6 +60,10 @@ npm run start:prod
 
 Open **http://127.0.0.1:5000**
 
+### First install notes
+
+- **First install requires Python 3.10+.** Setup looks for Python on your PATH first, then checks common install locations automatically. If setup still can't find Python, reinstall it from [python.org](https://www.python.org/downloads/) and make sure **Add Python to PATH** is checked during install.
+
 ### Highlights
 
 - All AI inference runs locally via Ollama — no cloud LLM APIs
@@ -78,7 +82,9 @@ Open **http://127.0.0.1:5000**
 
 ### Known limitations
 
-- CPU inference: 30–120s per chat turn; 2–10 min for roadmap/recommendations
+- **University match percentages are AI-estimated, not verified.** When a match score for a university or scholarship comes from AI analysis rather than a direct source, it's marked "Unverified" — treat it as a rough guide, not a guarantee, and confirm details on the official university or scholarship site before relying on it.
+- **Use one browser tab at a time.** AskPeri stores your profile and chat history locally and doesn't sync between tabs. If you have it open in two tabs, whichever one saves last will overwrite the other. Stick to a single tab per session to avoid losing data.
+- CPU inference: greetings are near-instant; substantive chat 2–5+ min; roadmap/recommendations 2–10 min (varies by model and hardware)
 - Single Ollama job at a time (queue lock)
 - DuckDuckGo fallback is lower quality than Tavily
 - Bookmarks stored in browser `localStorage` only

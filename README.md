@@ -36,13 +36,14 @@ See [RELEASE.md](RELEASE.md) for the v1.0.0 release checklist and tagging steps.
 
 ### Honest Latency (CPU-only)
 
-| Operation | Typical time |
-|-----------|-------------|
-| Chat reply | 30–120 seconds |
+| Operation | Typical time (CPU-only) |
+|-----------|-------------------------|
+| Chat greeting (fast path) | Near-instant (~seconds) |
+| Chat advice (substantive reply) | 2–5+ minutes |
 | University / scholarship recommendations | 1–5 minutes (first load can take longer) |
 | Roadmap generation | 2–10 minutes |
 
-GPU acceleration via Ollama significantly improves these times.
+Times vary with model size, hardware, and query complexity. GPU acceleration via Ollama significantly improves these times.
 
 ---
 
@@ -72,6 +73,8 @@ Open **http://127.0.0.1:5173**
 **First launch flow:** Setup screen (health check) → onboarding wizard (name, degree, country, GPA) → chat.
 
 If Ollama or the model is missing, the **Setup Screen** blocks the app until checks pass.
+
+**First install requires Python 3.10+.** Setup looks for Python on your PATH first, then checks common install locations automatically. If setup still can't find Python, reinstall it from [python.org](https://www.python.org/downloads/) and make sure **Add Python to PATH** is checked during install.
 
 ---
 
@@ -110,7 +113,7 @@ Open **http://127.0.0.1:5000** — API and UI on one port. FastAPI runs internal
 Better web search results. Without it, AskPeri uses DuckDuckGo with reduced quality.
 
 1. Get a key at [tavily.com](https://tavily.com)
-2. **Settings → paste key**, or set `TAVILY_API_KEY` in `ai/.env` (and optionally `server/.env`):
+2. **Settings → paste key**, or set `TAVILY_API_KEY` in `ai/.env`:
 
 ```env
 TAVILY_API_KEY=tvly-...
@@ -139,11 +142,18 @@ All services bind to **127.0.0.1 only**.
 | Data | Location |
 |------|----------|
 | Profile & chat sessions | `./data/askperi.db` |
-| Optional settings (Tavily key) | `./data/settings.json` |
+| Tavily API key (optional) | `ai/.env` |
 | Conversation memory vectors | `./data/chroma_data/` |
 | Bookmarks | Browser `localStorage` (`askperi_bookmarks`) |
 
 **Settings → Clear all data** resets profile, sessions, Chroma memory, bookmarks, and caches.
+
+---
+
+## Known limitations
+
+- **University match percentages are AI-estimated, not verified.** When a match score for a university or scholarship comes from AI analysis rather than a direct source, it's marked "Unverified" — treat it as a rough guide, not a guarantee, and confirm details on the official university or scholarship site before relying on it.
+- **Use one browser tab at a time.** AskPeri stores your profile and chat history locally and doesn't sync between tabs. If you have it open in two tabs, whichever one saves last will overwrite the other. Stick to a single tab per session to avoid losing data.
 
 ---
 
@@ -161,6 +171,7 @@ All services bind to **127.0.0.1 only**.
 | Slow chat / recommendations | Normal on CPU — see latency table above |
 | Smoke "Send message skipped" | OK on CPU if `npm run verify` passed (120s timeout) |
 | `better-sqlite3` install fails | Install [VS Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) on Windows |
+| Setup can't find Python | Reinstall Python 3.10+ from [python.org](https://www.python.org/downloads/) with **Add Python to PATH** checked, then run `npm run setup` again |
 | Python venv issues | `cd ai && python -m venv venv && pip install -r requirements.txt` |
 
 ---

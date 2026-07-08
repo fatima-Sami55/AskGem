@@ -3,7 +3,7 @@
  * Poll FastAPI /health until ollama + model are ready (max 120s).
  * Used before starting Express in dev/prod launchers.
  */
-const { FASTAPI_URL } = require('./lib/config');
+const { FASTAPI_HEALTH } = require('./lib/config');
 const { checkOllamaModel } = require('./lib/ollama');
 
 const MAX_WAIT_MS = 120_000;
@@ -11,7 +11,7 @@ const POLL_MS = 500;
 
 async function pollFastApiHealth() {
   try {
-    const res = await fetch(`${FASTAPI_URL}/health`, {
+    const res = await fetch(FASTAPI_HEALTH, {
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) return null;

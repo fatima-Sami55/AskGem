@@ -15,7 +15,15 @@ const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
-const AI_ENV_PATH = path.join(__dirname, '..', '..', 'ai', '.env');
+const AI_ENV_PATH = path.resolve(__dirname, '..', '..', 'ai', '.env');
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const DEFAULT_CHROMA_PATH = path.join(REPO_ROOT, 'data', 'chroma_data');
+
+function resolveChromaPath() {
+  const chromaEnv = (process.env.CHROMA_PATH || '').trim();
+  const raw = chromaEnv || DEFAULT_CHROMA_PATH;
+  return path.isAbsolute(raw) ? raw : path.resolve(raw);
+}
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -55,69 +63,71 @@ function readAiEnvTavilyKey() {
   }
 }
 
-function getTavilyKeySource() {
-  const file = readSettingsFile();
-  if (file.tavilyApiKey) return 'settings';
-  if ((process.env.TAVILY_API_KEY || '').trim()) return 'server-env';
-  if (readAiEnvTavilyKey()) return 'ai-env';
-  return null;
+async function syncTavilyKeyToAiRuntime(key) {
+  const normalized = (key || '').trim();
+  let response;
+  try {
+    response = await fetch(`${getAiServerUrl()}/settings/tavily`, {
+      method: 'PUT',
+      headers: getAiServerHeaders(),
+      signal: AbortSignal.timeout(10000),
+      body: JSON.stringify({ tavily_api_key: normalized }),
+    });
+  } catch (err) {
+    throw new AppError(
+      'Could not reach the AI server to update your Tavily key. Make sure AskPeri is fully running, then try again.',
+      503,
+    );
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new AppError(
+      `Failed to update Tavily key (${response.status}). ${detail.slice(0, 200)}`.trim(),
+      response.status >= 500 ? 503 : response.status,
+    );
+  }
 }
 
-function getEffectiveTavilyKey() {
-  const file = readSettingsFile();
-  return (
-    (file.tavilyApiKey || process.env.TAVILY_API_KEY || readAiEnvTavilyKey() || '')
-      .trim()
-  );
+function assertTavilyKeyOnDisk(expectedKey) {
+  const onDisk = readAiEnvTavilyKey();
+  if (onDisk !== expectedKey) {
+    throw new AppError(
+      expectedKey
+        ? 'Tavily key could not be saved to ai/.env. Please try again.'
+        : 'Tavily key could not be removed from ai/.env. Please try again.',
+      500,
+    );
+  }
 }
 
 exports.getSettings = catchAsync(async (req, res) => {
-  const tavilyKey = getEffectiveTavilyKey();
-  const tavilySource = getTavilyKeySource();
+  const tavilyKey = readAiEnvTavilyKey();
 
   res.status(200).json({
     status: 'success',
     data: {
       dataDir: path.resolve(DATA_DIR),
       dbPath: path.resolve(DB_PATH),
-      chromaPath: process.env.CHROMA_PATH || path.resolve(__dirname, '..', '..', 'ai', 'chroma_data'),
+      chromaPath: resolveChromaPath(),
       ollamaModel: process.env.OLLAMA_MODEL || 'gemma3:4b',
       tavilyConfigured: Boolean(tavilyKey),
       tavilyMasked: tavilyKey ? maskKey(tavilyKey) : null,
-      tavilyApiKey: tavilyKey || '',
-      tavilySource,
+      tavilySource: tavilyKey ? 'ai-env' : null,
     },
   });
 });
 
 exports.updateTavilyKey = catchAsync(async (req, res) => {
   const key = String(req.body?.tavilyApiKey || '').trim();
-  const file = readSettingsFile();
 
-  if (key) {
-    file.tavilyApiKey = key;
-  } else {
-    delete file.tavilyApiKey;
-  }
-
-  writeSettingsFile(file);
-  process.env.TAVILY_API_KEY = key;
-
-  try {
-    await fetch(`${getAiServerUrl()}/settings/tavily`, {
-      method: 'PUT',
-      headers: getAiServerHeaders(),
-      signal: AbortSignal.timeout(5000),
-      body: JSON.stringify({ tavily_api_key: key }),
-    });
-  } catch (err) {
-    console.warn('[Settings] Could not sync Tavily key to AI server:', err.message);
-  }
+  await syncTavilyKeyToAiRuntime(key);
+  assertTavilyKeyOnDisk(key);
 
   res.status(200).json({
     status: 'success',
-    message: key ? 'Tavily key saved.' : 'Tavily key removed.',
-    data: { tavilyConfigured: Boolean(key), tavilyMasked: key ? maskKey(key) : null, tavilyApiKey: key || '' },
+    message: key ? 'Tavily key saved to ai/.env.' : 'Tavily key removed from ai/.env.',
+    data: { tavilyConfigured: Boolean(key), tavilyMasked: key ? maskKey(key) : null },
   });
 });
 
@@ -154,6 +164,10 @@ exports.clearAllData = catchAsync(async (req, res) => {
     sessionCreations: [],
   });
 
+  writeSettingsFile({});
+  await syncTavilyKeyToAiRuntime('');
+  assertTavilyKeyOnDisk('');
+
   res.status(200).json({
     status: 'success',
     message: 'All local data cleared.',
@@ -161,5 +175,4 @@ exports.clearAllData = catchAsync(async (req, res) => {
 });
 
 exports.readSettingsFile = readSettingsFile;
-exports.getEffectiveTavilyKey = getEffectiveTavilyKey;
 exports.SETTINGS_PATH = SETTINGS_PATH;

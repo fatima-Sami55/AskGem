@@ -94,7 +94,7 @@ class RoadmapPhase(BaseModel):
 class RoadmapOpportunity(BaseModel):
     name: str
     url: str
-    matchScore: int
+    matchScore: Optional[int] = Field(default=None, ge=0, le=100)
     keyDeadline: str
     fundingType: str
     summary: str

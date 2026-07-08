@@ -375,7 +375,7 @@ function buildDetailedRoadmap(profile) {
       type: 'program',
       country: 'Germany',
       url: u.url,
-      matchScore: Math.max(60, 88 - i * 4),
+      matchScore: null,
       keyDeadline: u.deadline.split(';')[0],
       fundingType: 'Tuition-Free (Semester Fee Only)',
       whyItFits: `${u.program}. ${u.tuition}. ${u.minGpa}, ${u.ielts}.`,

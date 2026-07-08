@@ -305,15 +305,3 @@ def stream_chat_events(user_message: str, user_id: str, session_id: str = None, 
         time.time() - llm_start,
         chars_out,
     )
-
-
-def stream_chat_turn(user_message: str, user_id: str, session_id: str = None, profile: dict = None, conversation_history: list = None) -> tuple:
-    """Legacy wrapper — prefer stream_chat_events for SSE."""
-    events = list(stream_chat_events(user_message, user_id, session_id, profile, conversation_history))
-    chunks = [e["text"] for e in events if e.get("type") == "chunk" and e.get("text")]
-    sources = next((e["sources"] for e in events if e.get("type") == "sources"), [])
-    def chunk_gen():
-        for text in chunks:
-            yield text
-    metadata = {"searched": bool(sources), "queries_used": [], "sources": sources}
-    return chunk_gen(), metadata

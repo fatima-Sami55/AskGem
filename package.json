@@ -5,8 +5,9 @@
   "description": "AskPeri — single-user local education advisor",
   "scripts": {
     "setup": "node scripts/setup.js",
-    "setup:ai": "cd ai && pip install -r requirements.txt",
+    "setup:ai": "node scripts/setup-ai.js",
     "dev": "node scripts/dev.js",
+    "kill:dev": "node -e \"require('./scripts/lib/kill-dev-ports').killDevPorts()\"",
     "dev:win": "powershell -ExecutionPolicy Bypass -File scripts/start-local.ps1",
     "dev:unix": "bash scripts/start-local.sh",
     "health": "node scripts/health.js",

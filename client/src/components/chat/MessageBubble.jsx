@@ -1,6 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useProfile } from '../../context/ProfileContext';
+import { isSafeHttpUrl } from '../../utils/safeUrl';
 
 function TypingIndicator() {
   return (
@@ -13,7 +14,7 @@ function TypingIndicator() {
             <span className="typing-dot" />
             <span className="typing-dot" />
           </div>
-          <span className="text-xs font-medium text-muted-foreground animate-pulse">
+          <span className="text-xs font-medium text-slate-400 animate-pulse">
             Peri is thinking
           </span>
         </div>
@@ -94,14 +95,16 @@ export default function MessageBubble({ message, isThinking }) {
                 remarkPlugins={[remarkGfm]}
                 components={{
                   h1: ({ node, ...props }) => (
-                    <h1 style={{ color: '#818CF8', fontSize: '1.25rem', fontWeight: 700, marginTop: '1.25rem', marginBottom: '0.6rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.35rem' }} {...props} />
+                    <h1 style={{ color: '#818CF8', fontSize: '1.35rem', fontWeight: 700, marginTop: '1.5rem', marginBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.35rem' }} {...props} />
                   ),
                   h2: ({ node, ...props }) => (
-                    <h2 style={{ color: '#818CF8', fontSize: '1.15rem', fontWeight: 700, marginTop: '1.25rem', marginBottom: '0.6rem' }} {...props} />
+                    <h2 style={{ color: '#818CF8', fontSize: '1.2rem', fontWeight: 700, marginTop: '1.5rem', marginBottom: '0.65rem' }} {...props} />
                   ),
                   h3: ({ node, ...props }) => (
-                    <h3 style={{ color: '#A5B4FC', fontSize: '1rem', fontWeight: 600, marginTop: '1rem', marginBottom: '0.4rem', backgroundColor: 'rgba(99,102,241,0.08)', padding: '0.35rem 0.6rem', borderRadius: '6px', borderLeft: '3px solid #6366F1', display: 'inline-block' }} {...props} />
+                    <h3 style={{ color: '#A5B4FC', fontSize: '1rem', fontWeight: 600, marginTop: '1.25rem', marginBottom: '0.5rem', backgroundColor: 'rgba(99,102,241,0.08)', padding: '0.35rem 0.6rem', borderRadius: '6px', borderLeft: '3px solid #6366F1', display: 'inline-block' }} {...props} />
                   ),
+                  details: ({ node, ...props }) => <details {...props} />,
+                  summary: ({ node, ...props }) => <summary {...props} />,
                   ul: ({ node, ...props }) => (
                     <ul style={{ paddingLeft: '1.25rem', marginTop: '0.4rem', marginBottom: '0.85rem', listStyleType: 'disc' }} {...props} />
                   ),
@@ -114,9 +117,22 @@ export default function MessageBubble({ message, isThinking }) {
                   strong: ({ node, ...props }) => (
                     <strong style={{ color: '#F8FAFC', fontWeight: 600 }} {...props} />
                   ),
-                  a: ({ node, ...props }) => (
-                    <a style={{ color: '#6366F1', textDecoration: 'underline', fontWeight: 500 }} target="_blank" rel="noopener noreferrer" {...props} />
-                  ),
+                  a: ({ node, href, children, ...props }) => {
+                    if (!isSafeHttpUrl(href)) {
+                      return <span style={{ color: '#CBD5E1' }}>{children}</span>;
+                    }
+                    return (
+                      <a
+                        href={href}
+                        style={{ color: '#818cf8', textDecoration: 'underline', fontWeight: 500 }}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        {...props}
+                      >
+                        {children}
+                      </a>
+                    );
+                  },
                   p: ({ node, ...props }) => (
                     <p style={{ marginBottom: '0.85rem', lineHeight: '1.65', color: '#E2E8F0' }} {...props} />
                   )
@@ -129,18 +145,24 @@ export default function MessageBubble({ message, isThinking }) {
         )}
         {!isUser && message.sources && message.sources.length > 0 && (
           <div className="mt-2 pt-2 border-t border-white/10">
-            <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Sources</p>
+            <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Sources</p>
             <ul className="space-y-1">
               {message.sources.slice(0, 4).map((source, idx) => (
                 <li key={source.url || idx}>
-                  <a
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-[#6366F1] hover:underline"
-                  >
-                    {source.title || source.url}
-                  </a>
+                  {isSafeHttpUrl(source.url) ? (
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-[#818cf8] hover:underline"
+                    >
+                      {source.title || source.url}
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400">
+                      {source.title || source.url || 'Invalid source link'}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

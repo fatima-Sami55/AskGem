@@ -137,7 +137,7 @@ def _build_opportunities_from_search(search_results: list, profile: dict) -> lis
             "type": opp_type,
             "country": country,
             "url": url,
-            "matchScore": max(60, 90 - i * 4),
+            "matchScore": None,
             "keyDeadline": "Verify on official website",
             "fundingType": funding_type,
             "whyItFits": why_it_fits,

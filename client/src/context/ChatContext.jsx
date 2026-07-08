@@ -4,6 +4,13 @@ import ProfileConflictModal from '../components/ui/ProfileConflictModal';
 import { useProfile } from './ProfileContext';
 import { newMessageId } from '../utils/messageIds';
 import { parseSseBuffer, parseSsePayload } from '../utils/sseParser';
+import {
+  savePendingChatMessage,
+  clearPendingChatMessage,
+  restorePendingChatMessages,
+  shouldClearPendingChatMessage,
+  getPendingChatMessage,
+} from '../utils/askperiStorage';
 
 const ChatContext = createContext(null);
 
@@ -52,6 +59,45 @@ function buildModalConflicts(conflicts, pending, profile, userName) {
   return items;
 }
 
+function messagesMatch(a, b) {
+  return a.role === b.role && String(a.content || '') === String(b.content || '');
+}
+
+/** Keep local user/in-flight bubbles when server sync lags behind optimistic UI. */
+function mergeSessionMessagesWithOptimistic(prev, incoming) {
+  const normalized = incoming.map((m, idx) => {
+    const byIndex = prev[idx];
+    if (byIndex && messagesMatch(byIndex, m)) {
+      return {
+        ...m,
+        id: byIndex.id,
+        isStreaming: byIndex.isStreaming,
+        sources: byIndex.sources ?? m.sources,
+      };
+    }
+    const byContent = prev.find((p) => messagesMatch(p, m));
+    if (byContent?.id) {
+      return {
+        ...m,
+        id: byContent.id,
+        isStreaming: byContent.isStreaming,
+        sources: byContent.sources ?? m.sources,
+      };
+    }
+    return m;
+  });
+
+  const optimisticTail = prev.filter((local) => {
+    if (normalized.some((inc) => messagesMatch(inc, local))) return false;
+    if (local.role === 'user') return true;
+    if (local.isStreaming || local.isError) return true;
+    return local.role === 'model' && !String(local.content || '').trim();
+  });
+
+  if (optimisticTail.length === 0) return normalized;
+  return [...normalized, ...optimisticTail];
+}
+
 export function ChatProvider({ children }) {
   const { user, updateProfile, fetchProfile } = useProfile();
   const [sessions, setSessions] = useState([]);
@@ -76,17 +122,6 @@ export function ChatProvider({ children }) {
   const activeStreamRef = useRef(null);
   const refreshAiQueueRef = useRef(null);
   const awaitingReplyRef = useRef(false);
-
-  const updateMessageById = useCallback((messageId, updater) => {
-    if (!messageId) return;
-    setMessages((prev) => {
-      const idx = prev.findIndex((m) => m.id === messageId);
-      if (idx === -1) return prev;
-      const next = [...prev];
-      next[idx] = typeof updater === 'function' ? updater(next[idx]) : { ...next[idx], ...updater };
-      return next;
-    });
-  }, []);
 
   const refreshAiQueue = useCallback(async () => {
     try {
@@ -282,7 +317,17 @@ export function ChatProvider({ children }) {
     const res = await api.get(`/chat/session/${sessionId}`);
     const session = res.data.data.session;
     setActiveSessionId(sessionId);
-    setMessages(normalizeSessionMessages(session.messages));
+
+    const serverMessages = normalizeSessionMessages(session.messages);
+    const { messages: restoredMessages, awaitingReply } = restorePendingChatMessages(
+      sessionId,
+      serverMessages,
+      newMessageId,
+    );
+    setMessages(restoredMessages);
+    awaitingReplyRef.current = awaitingReply;
+    setIsThinking(awaitingReply);
+    setIsStreaming(false);
     setIsClosed(session.isClosed || false);
     setPendingExtraction(null);
 
@@ -319,30 +364,18 @@ export function ChatProvider({ children }) {
       const sessionRes = await api.get(`/chat/session/${sessionId}`);
       const updatedSession = sessionRes.data?.data?.session;
       if (updatedSession?.messages?.length) {
+        const incoming = normalizeSessionMessages(updatedSession.messages);
         if (!allowDuringReply && awaitingReplyRef.current) {
           // In-flight stream: DB may not have the latest user/model messages yet.
         } else {
-          setMessages((prev) => {
-            const incoming = normalizeSessionMessages(updatedSession.messages);
-            return incoming.map((m, idx) => {
-              const byIndex = prev[idx];
-              if (byIndex && byIndex.role === m.role && byIndex.content === m.content) {
-                return {
-                  ...m,
-                  id: byIndex.id,
-                  isStreaming: byIndex.isStreaming,
-                  sources: byIndex.sources ?? m.sources,
-                };
-              }
-              const byContent = prev.find(
-                (p) => p.role === m.role && p.content === m.content,
-              );
-              if (byContent?.id) {
-                return { ...m, id: byContent.id };
-              }
-              return m;
-            });
-          });
+          setMessages((prev) =>
+            mergeSessionMessagesWithOptimistic(prev, incoming),
+          );
+          if (shouldClearPendingChatMessage(sessionId, incoming)) {
+            clearPendingChatMessage(sessionId);
+            awaitingReplyRef.current = false;
+            setIsThinking(false);
+          }
         }
       }
       if (updatedSession) {
@@ -364,15 +397,27 @@ export function ChatProvider({ children }) {
       try {
         const sessionRes = await api.get(`/chat/session/${activeSessionId}`);
         const saved = sessionRes.data?.data?.session?.messages || [];
-        const lastUserIdx = saved.reduce(
+        const pending = getPendingChatMessage(activeSessionId);
+
+        let lastUserIdx = saved.reduce(
           (acc, m, idx) => (m.role === 'user' ? idx : acc),
           -1,
         );
+
+        if (pending?.text) {
+          const pendingIdx = saved.findIndex(
+            (m) => m.role === 'user' && String(m.content) === pending.text,
+          );
+          if (pendingIdx < 0) return;
+          lastUserIdx = pendingIdx;
+        }
+
         const hasReplyAfterLatestUser = saved
           .slice(lastUserIdx + 1)
           .some((m) => m.role === 'model' && String(m.content || '').trim());
         if (hasReplyAfterLatestUser) {
           awaitingReplyRef.current = false;
+          clearPendingChatMessage(activeSessionId);
           setPipelineStatus(null);
           setIsThinking(false);
           setIsStreaming(false);
@@ -415,6 +460,7 @@ export function ChatProvider({ children }) {
       ...prev,
       { id: newMessageId(), role: 'user', content: text, timestamp: new Date() },
     ]);
+    savePendingChatMessage(sessionId, text);
     awaitingReplyRef.current = true;
     setIsThinking(true);
     setIsStreaming(true);
@@ -536,6 +582,7 @@ export function ChatProvider({ children }) {
         });
       }
       awaitingReplyRef.current = false;
+      clearPendingChatMessage(sessionId);
       setPipelineStatus(null);
       setIsStreaming(false);
       setIsThinking(false);
@@ -581,7 +628,23 @@ export function ChatProvider({ children }) {
       setStreamFallbackToast({ id: Date.now() });
       setTimeout(() => setStreamFallbackToast(null), 4000);
       try {
-        const res = await api.post(`/chat/session/${sessionId}/message`, { text });
+        const queueStatus = await refreshAiQueue();
+        if (queueStatus.busy) {
+          const busyMessage = queueStatus.current_task
+            ? `AI is busy with ${queueStatus.current_task}. Please wait and try again.`
+            : 'AI is busy. Please wait and try again.';
+          upsertModelMessage({
+            content: busyMessage,
+            isStreaming: false,
+            isError: true,
+          });
+          return;
+        }
+
+        const res = await api.post(`/chat/session/${sessionId}/message`, {
+          text,
+          skipUserMessage: true,
+        });
         const {
           session: updatedSession,
           reply,
@@ -632,12 +695,22 @@ export function ChatProvider({ children }) {
         await fetchProfileScore();
         await refreshAiQueue();
         await syncMessagesFromServer(sessionId, { allowDuringReply: true });
+        clearPendingChatMessage(sessionId);
       } catch (fallbackErr) {
-        upsertModelMessage({
-          content: fallbackErr.response?.data?.message || "I'm having trouble connecting right now. Please try again.",
-          isStreaming: false,
-          isError: true,
-        });
+        if (fallbackErr.response?.status === 429) {
+          upsertModelMessage({
+            content: fallbackErr.response?.data?.message || 'AI is busy. Please wait and try again.',
+            isStreaming: false,
+            isError: true,
+          });
+        } else {
+          upsertModelMessage({
+            content: fallbackErr.response?.data?.message || "I'm having trouble connecting right now. Please try again.",
+            isStreaming: false,
+            isError: true,
+          });
+        }
+        await refreshAiQueue();
       } finally {
         setIsThinking(false);
         setIsStreaming(false);
@@ -649,7 +722,7 @@ export function ChatProvider({ children }) {
       setIsStreaming(false);
       setIsThinking(false);
     }
-  }, [activeSessionId, aiQueue.busy, fetchProfileScore, handleExtractionResult, updateMessageById, syncMessagesFromServer, refreshAiQueue]);
+  }, [activeSessionId, aiQueue.busy, fetchProfileScore, handleExtractionResult, syncMessagesFromServer, refreshAiQueue]);
 
   const deleteSession = useCallback(async (sessionId) => {
     try {
@@ -660,6 +733,7 @@ export function ChatProvider({ children }) {
     }
     setSessions((prev) => prev.filter((s) => s._id !== sessionId));
     if (activeSessionId === sessionId) {
+      clearPendingChatMessage(sessionId);
       setActiveSessionId(null);
       setMessages([]);
       setRecommendations({ programs: [], scholarships: [] });
@@ -689,10 +763,12 @@ export function ChatProvider({ children }) {
         timeout: 620000,
       });
       const roadmap = res.data?.data?.roadmap;
+      const updatedSession = res.data?.data?.session;
       if (!roadmap?.phases?.length) {
         throw new Error('Roadmap generation returned no milestones.');
       }
       setGeneratedRoadmap(roadmap);
+      setIsClosed(updatedSession?.isClosed ?? true);
       const opps = roadmap.opportunities || [];
       setRecommendations({
         programs: opps.filter((o) => o.type === 'program' || o.type === 'university_program'),
@@ -703,7 +779,11 @@ export function ChatProvider({ children }) {
         },
       });
       setSessions((prev) =>
-        prev.map((s) => (s._id === sessionId ? { ...s, generatedRoadmap: roadmap } : s)),
+        prev.map((s) => (
+          s._id === sessionId
+            ? { ...s, generatedRoadmap: roadmap, isClosed: updatedSession?.isClosed ?? true }
+            : s
+        )),
       );
       setMessages((prev) => [
         ...prev,
@@ -769,12 +849,12 @@ export function ChatProvider({ children }) {
         onResolve={handleConflictResolve}
       />
       {profileAutoToast && (
-        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-50 bg-slate-800/95 text-slate-200 px-4 py-2.5 rounded-lg text-xs font-medium shadow-xl backdrop-blur-sm border border-white/10 animate-fade-in-up">
+        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-50 bg-slate-800/95 text-slate-200 px-4 py-2.5 rounded-lg text-xs font-medium shadow-xl backdrop-blur-sm border border-white/10 animate-fade-in-up" role="status" aria-live="polite">
           Profile updated: added {profileAutoToast.fields.join(', ')}
         </div>
       )}
       {streamFallbackToast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-amber-900/90 text-amber-100 px-4 py-2.5 rounded-lg text-xs font-medium shadow-xl backdrop-blur-sm border border-amber-500/30 animate-fade-in-up">
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-amber-900/90 text-amber-100 px-4 py-2.5 rounded-lg text-xs font-medium shadow-xl backdrop-blur-sm border border-amber-500/30 animate-fade-in-up" role="status" aria-live="polite">
           Connection interrupted — retrying in standard mode.
         </div>
       )}

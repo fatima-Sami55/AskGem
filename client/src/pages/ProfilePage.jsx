@@ -4,6 +4,8 @@ import { useProfile } from '../context/ProfileContext';
 import { useChat } from '../context/ChatContext';
 import api from '../services/api';
 import MascotLoader from '../components/mascot/MascotLoader';
+import AppShell from '../components/AppShell';
+import { EDUCATION_LEVELS } from '../constants/educationLevels';
 import {
   ArrowLeft, User, Mail, Calendar, Award, CheckCircle2,
   Globe, BookOpen, GraduationCap, DollarSign, Briefcase,
@@ -94,7 +96,7 @@ function CountryDropdown({ selected, onSelect, onRemove, error }) {
         type="button"
         onClick={() => !isMax && setOpen(o => !o)}
         disabled={isMax}
-        className={`w-full flex items-center justify-between px-4 py-2.5 bg-[#0F172A] border rounded-xl text-sm text-slate-300 transition-colors ${error ? 'border-red-500' : 'border-white/10 hover:border-[#6366F1]/50'}`}
+        className={`w-full flex items-center justify-between px-4 py-2.5 bg-[#0f0f1a] border rounded-xl text-sm text-slate-300 transition-colors ${error ? 'border-red-500' : 'border-white/10 hover:border-[#6366F1]/50'}`}
       >
         <span className="text-slate-400">
           {isMax ? 'Maximum 10 countries selected' : 'Add preferred target country...'}
@@ -103,7 +105,7 @@ function CountryDropdown({ selected, onSelect, onRemove, error }) {
       </button>
 
       {open && !isMax && (
-        <div className="absolute z-30 mt-2 w-full bg-[#1E293B] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute z-30 mt-2 w-full bg-[#16162a] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
           <div className="p-2 border-b border-white/10 flex items-center gap-2">
             <Search className="w-4 h-4 text-slate-400 ml-2" />
             <input
@@ -555,11 +557,19 @@ export default function ProfilePage() {
   const liveUsdEquivalent = Math.round(parsePkrNumber(formData.budgetPkr) / PKR_TO_USD);
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-white font-sans">
+    <AppShell
+      title="Student Profile"
+      headerRight={isDirty ? (
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+          Unsaved
+        </span>
+      ) : null}
+    >
+    <div className="font-sans">
       {/* Zero Budget Confirmation Modal */}
       {showZeroBudgetModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+          <div className="bg-[#16162a] border border-white/10 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
             <div className="flex items-center gap-3 text-amber-400">
               <AlertTriangle className="w-6 h-6 flex-shrink-0" />
               <h3 className="text-base font-bold text-white">Fully Funded Scholarship Mode</h3>
@@ -578,7 +588,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={executeSave}
-                className="px-4 py-2 rounded-xl bg-[#6366F1] text-white hover:bg-[#4f46e5] text-xs font-bold shadow-lg"
+                className="px-4 py-2 rounded-xl bg-[#6366F1] text-[#0f0f1a] hover:bg-[#5558DD] text-xs font-bold shadow-lg"
               >
                 Proceed & Save
               </button>
@@ -587,40 +597,13 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Top Navigation */}
-      <header className="sticky top-0 z-20 bg-[#1E293B]/90 backdrop-blur border-b border-white/10 px-6 h-16 flex items-center justify-between">
-        <button
-          onClick={() => navigate('/chat')}
-          className="flex items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4 text-[#6366F1]" /> Back to Chat
-        </button>
-        <div className="flex items-center gap-3">
-          <h1 className="text-base font-bold tracking-tight text-white">Student Profile</h1>
-          {isDirty && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
-              Unsaved Changes
-            </span>
-          )}
-        </div>
-        <div className="w-20 flex justify-end">
-          <button
-            type="button"
-            onClick={() => navigate('/settings')}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-            aria-label="Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
 
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+      <div className="max-w-4xl mx-auto px-4 lg:px-8 py-8 space-y-8">
 
         {/* TASK 5: PROFILE COMPLETENESS INDICATOR */}
         <div
           onClick={scrollToIncomplete}
-          className="bg-[#1E293B] border border-white/10 rounded-2xl p-5 shadow-xl cursor-pointer hover:border-[#6366F1]/50 transition-all space-y-2"
+          className="bg-[#16162a] border border-white/10 rounded-2xl p-5 shadow-xl cursor-pointer hover:border-[#6366F1]/50 transition-all space-y-2"
         >
           <div className="flex items-center justify-between text-xs font-bold">
             <span className="text-slate-300">
@@ -637,7 +620,7 @@ export default function ProfilePage() {
         </div>
 
         {/* SECTION 1: PROFILE HEADER */}
-        <div className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="bg-[#16162a] border border-white/10 rounded-2xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-5">
             <div className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-[#6366F1] bg-slate-800 flex-shrink-0 shadow-lg">
               <img
@@ -654,11 +637,11 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-6 bg-[#0F172A]/80 border border-white/5 rounded-2xl p-4 md:px-6">
+          <div className="flex items-center gap-6 bg-[#0f0f1a]/80 border border-white/5 rounded-2xl p-4 md:px-6">
             <div className="text-center">
               <div className="relative inline-flex items-center justify-center">
                 <svg className="w-20 h-20 transform -rotate-90">
-                  <circle cx="40" cy="40" r="34" stroke="#1E293B" strokeWidth="6" fill="transparent" />
+                  <circle cx="40" cy="40" r="34" stroke="#16162a" strokeWidth="6" fill="transparent" />
                   <circle
                     cx="40" cy="40" r="34"
                     stroke={scoreColor} strokeWidth="6" fill="transparent"
@@ -685,7 +668,7 @@ export default function ProfilePage() {
         </div>
 
         {/* SECTION 2: SCORE BREAKDOWN PANEL */}
-        <div className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 md:p-8 shadow-xl space-y-6">
+        <div className="bg-[#16162a] border border-white/10 rounded-2xl p-6 md:p-8 shadow-xl space-y-6">
           <div className="flex items-center gap-2 border-b border-white/10 pb-4">
             <Award className="w-5 h-5 text-[#6366F1]" />
             <h3 className="text-lg font-bold text-white">Score Breakdown Panel</h3>
@@ -704,7 +687,7 @@ export default function ProfilePage() {
               const pct = Math.min(100, (catScore / catMax) * 100);
 
               return (
-                <div key={idx} className="space-y-1.5 bg-[#0F172A]/50 p-4 rounded-xl border border-white/5">
+                <div key={idx} className="space-y-1.5 bg-[#0f0f1a]/50 p-4 rounded-xl border border-white/5">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-semibold text-slate-200 flex items-center gap-2">
                       {cat.icon} {cat.label}
@@ -727,7 +710,7 @@ export default function ProfilePage() {
         </div>
 
         {/* SECTION 3: EDIT PROFILE FORM */}
-        <form onSubmit={handleSubmit} className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 md:p-8 shadow-xl space-y-6">
+        <form onSubmit={handleSubmit} className="bg-[#16162a] border border-white/10 rounded-2xl p-6 md:p-8 shadow-xl space-y-6">
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <div className="flex items-center gap-2">
               <User className="w-5 h-5 text-[#6366F1]" />
@@ -772,7 +755,7 @@ export default function ProfilePage() {
                 type="text"
                 value={formData.name}
                 onChange={e => updateField('name', e.target.value)}
-                className={`w-full px-4 py-2.5 bg-[#0F172A] border rounded-xl text-sm text-white focus:outline-none ${errors.name ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
+                className={`w-full px-4 py-2.5 bg-[#0f0f1a] border rounded-xl text-sm text-white focus:outline-none ${errors.name ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
                 required
               />
               {errors.name && <p className="text-xs text-red-500 flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3"/>{errors.name}</p>}
@@ -786,7 +769,7 @@ export default function ProfilePage() {
                 value={formData.gpa}
                 onChange={e => updateField('gpa', e.target.value)}
                 placeholder="e.g. 3.50"
-                className={`w-full px-4 py-2.5 bg-[#0F172A] border rounded-xl text-sm text-white focus:outline-none ${errors.gpa ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
+                className={`w-full px-4 py-2.5 bg-[#0f0f1a] border rounded-xl text-sm text-white focus:outline-none ${errors.gpa ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
               />
               <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                 <Info className="w-3 h-3 text-sky-400 flex-shrink-0" /> Enter on 4.0 scale. Pakistani percentage? Divide by 25
@@ -800,12 +783,16 @@ export default function ProfilePage() {
               <select
                 value={formData.educationLevel}
                 onChange={e => updateField('educationLevel', e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#0F172A] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#6366F1]"
+                className="w-full px-4 py-2.5 bg-[#0f0f1a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#818cf8]"
               >
-                <option value="High School">High School</option>
-                <option value="Undergraduate">Undergraduate</option>
-                <option value="Postgraduate">Postgraduate</option>
+                {EDUCATION_LEVELS.map((level) => (
+                  <option key={level.value} value={level.value}>{level.label}</option>
+                ))}
               </select>
+              <p className="text-[11px] text-slate-400 flex items-center gap-1">
+                <Info className="w-3 h-3 text-sky-400 flex-shrink-0" />
+                FSc / A-Levels covers Pakistani intermediate board results.
+              </p>
             </div>
 
             {/* Target Degree */}
@@ -814,7 +801,7 @@ export default function ProfilePage() {
               <select
                 value={formData.targetDegree}
                 onChange={e => updateField('targetDegree', e.target.value)}
-                className={`w-full px-4 py-2.5 bg-[#0F172A] border rounded-xl text-sm text-white focus:outline-none ${errors.targetDegree ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
+                className={`w-full px-4 py-2.5 bg-[#0f0f1a] border rounded-xl text-sm text-white focus:outline-none ${errors.targetDegree ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
               >
                 <option value="Bachelors">Bachelors</option>
                 <option value="Masters">Masters</option>
@@ -831,7 +818,7 @@ export default function ProfilePage() {
                 value={formData.major}
                 onChange={e => updateField('major', e.target.value)}
                 placeholder="e.g. Computer Science"
-                className={`w-full px-4 py-2.5 bg-[#0F172A] border rounded-xl text-sm text-white focus:outline-none ${errors.major ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
+                className={`w-full px-4 py-2.5 bg-[#0f0f1a] border rounded-xl text-sm text-white focus:outline-none ${errors.major ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
               />
               {errors.major && <p className="text-xs text-red-500 flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3"/>{errors.major}</p>}
             </div>
@@ -844,7 +831,7 @@ export default function ProfilePage() {
                 value={formData.age}
                 onChange={e => updateField('age', e.target.value)}
                 placeholder="e.g. 22"
-                className={`w-full px-4 py-2.5 bg-[#0F172A] border rounded-xl text-sm text-white focus:outline-none ${errors.age ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
+                className={`w-full px-4 py-2.5 bg-[#0f0f1a] border rounded-xl text-sm text-white focus:outline-none ${errors.age ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
               />
               {/* Edge Case 6 Warning */}
               {formData.age === '17' && formData.educationLevel === 'Postgraduate' && (
@@ -865,7 +852,7 @@ export default function ProfilePage() {
                 value={formData.budgetPkr}
                 onChange={e => updateField('budgetPkr', formatPkr(e.target.value))}
                 placeholder="e.g. 1,400,000"
-                className={`w-full px-4 py-2.5 bg-[#0F172A] border rounded-xl text-sm text-white focus:outline-none ${errors.budgetPkr ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
+                className={`w-full px-4 py-2.5 bg-[#0f0f1a] border rounded-xl text-sm text-white focus:outline-none ${errors.budgetPkr ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
               />
             </div>
 
@@ -891,7 +878,7 @@ export default function ProfilePage() {
                   key={preset.label}
                   type="button"
                   onClick={() => updateField('budgetPkr', preset.val)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0F172A] border border-white/10 hover:border-[#6366F1]/50 text-slate-300 hover:text-white transition-all"
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0f0f1a] border border-white/10 hover:border-[#6366F1]/50 text-slate-300 hover:text-white transition-all"
                 >
                   {preset.label}
                 </button>
@@ -918,7 +905,7 @@ export default function ProfilePage() {
               <select
                 value={formData.englishTestType}
                 onChange={e => updateField('englishTestType', e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#0F172A] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#6366F1]"
+                className="w-full px-4 py-2.5 bg-[#0f0f1a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#6366F1]"
               >
                 <option value="None">None / Not Taken Yet</option>
                 <option value="IELTS">IELTS</option>
@@ -939,7 +926,7 @@ export default function ProfilePage() {
                   value={formData.englishTestScore}
                   onChange={e => updateField('englishTestScore', e.target.value)}
                   placeholder={formData.englishTestType === 'IELTS' ? 'e.g. 7.0' : 'e.g. 95'}
-                  className={`w-full px-4 py-2.5 bg-[#0F172A] border rounded-xl text-sm text-white focus:outline-none ${errors.englishTestScore ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
+                  className={`w-full px-4 py-2.5 bg-[#0f0f1a] border rounded-xl text-sm text-white focus:outline-none ${errors.englishTestScore ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
                 />
                 {/* Edge Case 4 Warning */}
                 {formData.englishTestScore === '' && (
@@ -957,7 +944,7 @@ export default function ProfilePage() {
               <select
                 value={formData.workExperience}
                 onChange={e => updateField('workExperience', parseFloat(e.target.value))}
-                className="w-full px-4 py-2.5 bg-[#0F172A] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#6366F1]"
+                className="w-full px-4 py-2.5 bg-[#0f0f1a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#6366F1]"
               >
                 <option value="0">None</option>
                 <option value="0.5">6 months</option>
@@ -975,7 +962,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => updateField('researchExperience', !formData.researchExperience)}
-                className={`w-full py-2.5 px-4 rounded-xl text-sm font-semibold flex items-center justify-between border transition-all ${formData.researchExperience ? 'bg-[#6366F1]/20 border-[#6366F1] text-white' : 'bg-[#0F172A] border-white/10 text-slate-400'}`}
+                className={`w-full py-2.5 px-4 rounded-xl text-sm font-semibold flex items-center justify-between border transition-all ${formData.researchExperience ? 'bg-[#6366F1]/20 border-[#6366F1] text-white' : 'bg-[#0f0f1a] border-white/10 text-slate-400'}`}
               >
                 <span>{formData.researchExperience ? 'Yes, active research background' : 'No research experience'}</span>
                 <span className={`w-3 h-3 rounded-full ${formData.researchExperience ? 'bg-[#6366F1]' : 'bg-slate-600'}`}></span>
@@ -992,7 +979,7 @@ export default function ProfilePage() {
                   max="100"
                   value={formData.publications}
                   onChange={e => updateField('publications', e.target.value)}
-                  className={`w-full px-4 py-2.5 bg-[#0F172A] border rounded-xl text-sm text-white focus:outline-none ${errors.publications ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
+                  className={`w-full px-4 py-2.5 bg-[#0f0f1a] border rounded-xl text-sm text-white focus:outline-none ${errors.publications ? 'border-red-500' : 'border-white/10 focus:border-[#6366F1]'}`}
                 />
                 {errors.publications && <p className="text-xs text-red-500 flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3"/>{errors.publications}</p>}
               </div>
@@ -1010,7 +997,7 @@ export default function ProfilePage() {
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 px-6 py-3 bg-[#6366F1] hover:bg-[#4f46e5] text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-[#6366F1]/25 disabled:opacity-50"
+              className="flex items-center gap-2 px-6 py-3 bg-[#6366F1] hover:bg-[#5558DD] text-[#0f0f1a] font-bold text-sm rounded-xl transition-all shadow-lg shadow-[#6366F1]/25 disabled:opacity-50"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save & Recalculate Score
@@ -1019,7 +1006,7 @@ export default function ProfilePage() {
         </form>
 
         {/* SECTION 4: IMPROVEMENT ROADMAP */}
-        <div className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 md:p-8 shadow-xl space-y-6">
+        <div className="bg-[#16162a] border border-white/10 rounded-2xl p-6 md:p-8 shadow-xl space-y-6">
           <div className="flex items-center gap-2 border-b border-white/10 pb-4">
             <FileText className="w-5 h-5 text-[#6366F1]" />
             <h3 className="text-lg font-bold text-white">Actionable Improvement Checklist</h3>
@@ -1035,7 +1022,7 @@ export default function ProfilePage() {
                   <div
                     key={idx}
                     onClick={() => setCheckedImprovements(p => ({ ...p, [idx]: !p[idx] }))}
-                    className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isDone ? 'bg-emerald-500/10 border-emerald-500/30 text-slate-400 line-through' : 'bg-[#0F172A]/80 border-white/5 text-slate-200 hover:border-[#6366F1]/40'}`}
+                    className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isDone ? 'bg-emerald-500/10 border-emerald-500/30 text-slate-400 line-through' : 'bg-[#0f0f1a]/80 border-white/5 text-slate-200 hover:border-[#6366F1]/40'}`}
                   >
                     {isDone ? (
                       <CheckSquare className="w-5 h-5 text-emerald-400 flex-shrink-0" />
@@ -1052,5 +1039,6 @@ export default function ProfilePage() {
 
       </div>
     </div>
+    </AppShell>
   );
 }

@@ -76,13 +76,28 @@ function extractName(message, currentContext) {
   return undefined;
 }
 
-function gpaOwnershipScore(message, matchIndex, matchedLength) {
-  const windowStart = Math.max(0, matchIndex - 40);
-  const windowEnd = Math.min(message.length, matchIndex + matchedLength + 40);
-  const contextText = message.slice(windowStart, windowEnd).toLowerCase();
+function gpaOwnershipScore(message, matchIndex, matchedLength, matchedText = '') {
+  const beforeStart = Math.max(0, matchIndex - 50);
+  const beforeText = message.slice(beforeStart, matchIndex).toLowerCase();
+  const afterEnd = Math.min(message.length, matchIndex + matchedLength + 20);
+  const afterText = message.slice(matchIndex + matchedLength, afterEnd).toLowerCase();
+  const nearBefore = beforeText.slice(-40);
+  const prefix = matchedText.toLowerCase();
   let score = 0;
-  if (/\b(?:my|mine|i\s+have|i\s+got|i\s+scored)\b/.test(contextText)) score += 3;
-  if (/\b(?:friend'?s?|his|her|their|brother|sister|classmate|roommate)\b/.test(contextText)) score -= 2;
+
+  if (/\bi\s+have\s+\d/.test(prefix) || /\bi\s+have\s*$/.test(nearBefore) || /\bi\s+have\s+\d/.test(nearBefore)) score += 8;
+  if (/\bi\s+(?:got|scored|achieved)\s+\d/.test(prefix) || /\bi\s+(?:got|scored|achieved)\s*$/.test(nearBefore.slice(-22))) score += 6;
+  if (/\bmy\s+(?:c?gpa|cgpa|grade)\s+(?:is|was|of|=|:)/.test(prefix) || /\bmy\s+(?:c?gpa|cgpa|grade)\s+(?:is|was|of|=|:)\s*$/.test(nearBefore.slice(-32))) score += 6;
+  if (/\bmy\s+(?:c?gpa|cgpa)\b/.test(prefix) || /\bmy\s+(?:c?gpa|cgpa)\s*$/.test(nearBefore.slice(-16))) score += 4;
+
+  if (/\b(?:my\s+)?friend(?:'s)?\s+(?:has|had|got|scored|with)\s*$/.test(nearBefore.slice(-36))) score -= 8;
+  if (/\b(?:his|her|their|brother|sister|classmate|roommate)('s)?\s+(?:has|had|got|scored|with)\s*$/.test(nearBefore.slice(-36))) score -= 7;
+  if (/\bfriend(?:'s)?\s+(?:has|had|got|scored)\s*$/.test(nearBefore.slice(-30))) score -= 6;
+
+  if (!/\bmy\s+friend\b/.test(`${nearBefore}${prefix}`) && /\bmy\b/.test(nearBefore.slice(-12))) score += 1;
+
+  if (/^\s*c?gpa\b/.test(afterText) && /\bfriend\b/.test(nearBefore.slice(-25))) score -= 4;
+
   return score;
 }
 
@@ -91,7 +106,7 @@ function finalizeGpaCandidate(gpa, message, matchIndex, matchedLength, currentCo
     const diff = Math.abs(gpa - currentContext.gpa);
     if (diff < 0.05) return null;
   }
-  return { gpa, score: gpaOwnershipScore(message, matchIndex, matchedLength) };
+  return { gpa, score: gpaOwnershipScore(message, matchIndex, matchedLength, message.slice(matchIndex, matchIndex + matchedLength)) };
 }
 
 function extractGpa(message, currentContext) {
@@ -159,10 +174,52 @@ function extractGpa(message, currentContext) {
     }
   }
 
+  const firstPersonPatterns = [
+    /\bi\s+have\s+(\d+(?:[.,]\d+)?)\b/gi,
+    /\bi\s+(?:got|scored|achieved)\s+(\d+(?:[.,]\d+)?)\b/gi,
+    /\bmy\s+(?:c?gpa|cgpa)\s+(?:is|was|of|=|:)\s+(\d+(?:[.,]\d+)?)\b/gi,
+  ];
+
+  for (const pattern of firstPersonPatterns) {
+    let firstPersonMatch;
+    while ((firstPersonMatch = pattern.exec(msg)) !== null) {
+      const matchIndex = firstPersonMatch.index;
+      const matchedText = firstPersonMatch[0];
+      const windowStart = Math.max(0, matchIndex - 25);
+      const windowEnd = Math.min(msg.length, matchIndex + matchedText.length + 25);
+      const contextText = msg.slice(windowStart, windowEnd);
+      if (/(?:ielts|toefl|duolingo|gre|sat|speaking|listening|reading|writing|band|test)/i.test(contextText)) {
+        continue;
+      }
+
+      const val = parseFloat(firstPersonMatch[1].replace(',', '.'));
+      if (isNaN(val) || val < 0 || val > 4.0) continue;
+
+      const gpa = Math.round(val * 100) / 100;
+      const result = finalizeGpaCandidate(gpa, message, matchIndex, matchedText.length, currentContext);
+      if (result) candidates.push(result);
+    }
+  }
+
   if (candidates.length === 0) return undefined;
 
-  candidates.sort((a, b) => b.score - a.score);
-  return candidates[0].gpa;
+  const byGpa = new Map();
+  for (const candidate of candidates) {
+    const existing = byGpa.get(candidate.gpa);
+    if (!existing || candidate.score > existing.score) {
+      byGpa.set(candidate.gpa, candidate);
+    }
+  }
+  const uniqueCandidates = Array.from(byGpa.values());
+  uniqueCandidates.sort((a, b) => b.score - a.score);
+
+  const best = uniqueCandidates[0];
+  const second = uniqueCandidates[1];
+
+  if (best.score < 0) return undefined;
+  if (second && best.score - second.score <= 1) return undefined;
+
+  return best.gpa;
 }
 
 const ENGLISH_TEST_NEGATION = /(?:haven'?t\s+taken|have\s+not\s+taken|not\s+yet|no\s+(?:ielts|toefl|duolingo|english\s+test)|not\s+taken|planning\s+to\s+take|plan\s+to\s+take)/i;

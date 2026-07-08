@@ -5,8 +5,10 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { ROOT, getAiDir, getVenvDir } = require('./lib/config');
+const { requirePythonCommand } = require('./lib/findPython');
 
-const root = path.join(__dirname, '..');
+const root = ROOT;
 const dataDir = path.join(root, 'data');
 
 function run(cmd, cwd) {
@@ -22,14 +24,11 @@ if (!fs.existsSync(dataDir)) {
 run('npm install', path.join(root, 'server'));
 run('npm install', path.join(root, 'client'));
 
-const aiDir = path.join(root, 'ai');
-const venvDir = path.join(aiDir, 'venv');
+const aiDir = getAiDir();
+const venvDir = getVenvDir();
 if (!fs.existsSync(venvDir)) {
-  try {
-    run('python -m venv venv', aiDir);
-  } catch {
-    run('python3 -m venv venv', aiDir);
-  }
+  const python = requirePythonCommand();
+  run(`${python} -m venv venv`, aiDir);
 }
 
 console.log('\n✅ Setup complete. Next: npm run setup:ai (Python deps), then npm run dev from repo root');

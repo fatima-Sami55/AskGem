@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -15,8 +15,21 @@ import {
 } from 'lucide-react';
 
 import MascotLoader from '../components/mascot/MascotLoader';
+import AppShell from '../components/AppShell';
 
+const ROADMAP_LOADING_STAGES = [
+  { afterMs: 0, message: 'Loading your profile…', step: 0 },
+  { afterMs: 30000, message: 'Researching programs and requirements…', step: 1 },
+  { afterMs: 90000, message: 'Drafting roadmap phases…', step: 2 },
+  { afterMs: 180000, message: 'Still working — first run on CPU can take several minutes…', step: 3 },
+];
 
+const ROADMAP_STEPS = [
+  'Profile loaded',
+  'Searching official sources',
+  'Drafting phases',
+  'Final review',
+];
 
 function getProfileChecklist(profile) {
 
@@ -60,7 +73,7 @@ function PhaseStepDetails({ stepDetails }) {
 
           key={dIdx}
 
-          className="bg-[#1E293B]/60 border border-white/10 rounded-xl p-4 space-y-2"
+          className="bg-[#16162a]/60 border border-white/10 rounded-xl p-4 space-y-2"
 
         >
 
@@ -161,6 +174,29 @@ export default function RoadmapPage() {
   const [error, setError] = useState(null);
 
   const [expandedPhase, setExpandedPhase] = useState(0);
+  const [loadingStage, setLoadingStage] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (!isGeneratingRoadmap) return undefined;
+
+    setLoadingStage(0);
+    setElapsedSec(0);
+    const start = Date.now();
+
+    const elapsedTimer = setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+
+    const stageTimers = ROADMAP_LOADING_STAGES.slice(1).map((stage, idx) =>
+      setTimeout(() => setLoadingStage(idx + 1), stage.afterMs),
+    );
+
+    return () => {
+      clearInterval(elapsedTimer);
+      stageTimers.forEach(clearTimeout);
+    };
+  }, [isGeneratingRoadmap]);
 
 
 
@@ -211,52 +247,31 @@ export default function RoadmapPage() {
 
 
   if (isGeneratingRoadmap) {
+    const stage = ROADMAP_LOADING_STAGES[loadingStage] || ROADMAP_LOADING_STAGES[0];
 
     return (
-
-      <MascotLoader message="Building your step-by-step roadmap..." />
-
+      <MascotLoader
+        title="Building your roadmap…"
+        subtitle="First run on CPU can take 2–10 minutes. You can leave this tab open."
+        message={stage.message}
+        elapsedSeconds={elapsedSec}
+        etaLabel="2–10 min on CPU"
+        steps={ROADMAP_STEPS}
+        currentStepIndex={stage.step}
+        onCancel={() => navigate('/chat')}
+        cancelLabel="Back to chat"
+      />
     );
-
   }
 
 
 
   return (
+    <AppShell title="Academic Roadmap">
+    <div className="font-sans">
+      <div className="max-w-4xl mx-auto px-4 lg:px-8 py-8 space-y-6">
 
-    <div className="min-h-screen bg-[#0F172A] text-white font-sans">
-
-      <header className="sticky top-0 z-20 bg-[#1E293B]/90 backdrop-blur border-b border-white/10 px-6 h-16 flex items-center justify-between">
-
-        <button
-
-          type="button"
-
-          onClick={() => navigate('/chat')}
-
-          className="flex items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white transition-colors"
-
-        >
-
-          <ArrowLeft className="w-4 h-4 text-[#6366F1]" /> Back to Chat
-
-        </button>
-
-        <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
-
-          <Compass className="w-5 h-5 text-[#6366F1]" /> Academic Roadmap
-
-        </h1>
-
-        <div className="w-20" />
-
-      </header>
-
-
-
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-
-        <div className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="bg-[#16162a] border border-white/10 rounded-2xl p-6 shadow-xl space-y-4">
 
           <h2 className="text-xl font-extrabold text-white">Your Study Abroad Roadmap</h2>
 
@@ -320,7 +335,7 @@ export default function RoadmapPage() {
 
             disabled={!profileComplete || !sessionId || aiQueueBlocksSend}
 
-            className="w-full py-3 px-4 rounded-xl text-sm font-bold text-white bg-[#6366F1] hover:bg-[#5558e3] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            className="w-full py-3 px-4 rounded-xl text-sm font-bold text-[#0f0f1a] bg-[#6366F1] hover:bg-[#5558DD] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
 
           >
 
@@ -348,7 +363,7 @@ export default function RoadmapPage() {
 
         {sessionRoadmap?.phases?.length > 0 ? (
 
-          <div className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 shadow-xl space-y-6">
+          <div className="bg-[#16162a] border border-white/10 rounded-2xl p-6 shadow-xl space-y-6">
 
             <div>
 
@@ -376,7 +391,7 @@ export default function RoadmapPage() {
 
                 {sessionRoadmap.gaps?.length > 0 && (
 
-                  <div className="bg-[#0F172A] border border-amber-500/20 rounded-xl p-4 space-y-2">
+                  <div className="bg-[#0f0f1a] border border-amber-500/20 rounded-xl p-4 space-y-2">
 
                     <p className="text-xs font-bold uppercase tracking-wider text-amber-300">Profile gaps</p>
 
@@ -402,7 +417,7 @@ export default function RoadmapPage() {
 
                 {sessionRoadmap.recommendations?.length > 0 && (
 
-                  <div className="bg-[#0F172A] border border-emerald-500/20 rounded-xl p-4 space-y-2">
+                  <div className="bg-[#0f0f1a] border border-emerald-500/20 rounded-xl p-4 space-y-2">
 
                     <p className="text-xs font-bold uppercase tracking-wider text-emerald-300">Priority actions</p>
 
@@ -446,7 +461,7 @@ export default function RoadmapPage() {
 
                     key={idx}
 
-                    className={`bg-[#0F172A] border rounded-xl overflow-hidden transition-colors ${
+                    className={`bg-[#0f0f1a] border rounded-xl overflow-hidden transition-colors ${
 
                       isOpen ? 'border-[#6366F1]/40' : 'border-white/5 hover:border-white/15'
 
@@ -575,10 +590,8 @@ export default function RoadmapPage() {
         )}
 
       </div>
-
     </div>
-
+    </AppShell>
   );
-
 }
 

@@ -4,6 +4,7 @@ const path = require('path');
 const { ROOT } = require('./lib/config');
 
 const waitScript = path.join(__dirname, 'wait-for-ai.js');
+
 console.log('Waiting for FastAPI before starting Express...');
 const waitResult = spawnSync('node', [waitScript], { stdio: 'inherit', cwd: ROOT });
 if (waitResult.status !== 0) {

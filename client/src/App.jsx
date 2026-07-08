@@ -76,9 +76,6 @@ function AppRoutes() {
       </Route>
 
       <Route path="/recommendations" element={<Navigate to="/roadmap" replace />} />
-      <Route path="/login" element={<Navigate to="/chat" replace />} />
-      <Route path="/register" element={<Navigate to="/chat" replace />} />
-      <Route path="/auth/callback" element={<Navigate to="/chat" replace />} />
 
       <Route path="*" element={<Navigate to="/chat" replace />} />
     </Routes>

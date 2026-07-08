@@ -185,7 +185,7 @@ export default function ChatWindow() {
   // Name: server is authoritative (fresh). Auth JWT may be stale after profile update.
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#0F172A] relative overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-[#0f0f1a] relative overflow-hidden">
       {/* Scrollable message thread area */}
       <div className="flex-1 overflow-y-auto px-4 md:px-8" style={{ display:'flex', flexDirection:'column' }}>
         {messages.length === 0 && !periIsWorking ? (
@@ -224,7 +224,7 @@ export default function ChatWindow() {
               )}
             </div>
 
-            <p className="text-[10px] text-slate-500 mb-4 text-center max-w-md">
+            <p className="text-[10px] text-slate-400 mb-4 text-center max-w-md">
               Heuristic score — not a university-specific admission prediction.
             </p>
 
@@ -287,6 +287,7 @@ export default function ChatWindow() {
           />
         )}
 
+        {/* isClosed = roadmap-ready session (sidebar badge + nudge); chat input stays open */}
         {isClosed && (
           <div className="mb-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200 text-center font-medium flex items-center justify-center gap-2 flex-wrap">
             <span>Your roadmap is ready — keep chatting anytime or</span>
@@ -346,7 +347,7 @@ export default function ChatWindow() {
 
       {/* Task 2: Score Update Toast */}
       {scoreToast && (
-        <div className="fixed bottom-24 right-6 z-50 bg-[#6366F1]/90 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-xl backdrop-blur-sm border border-white/10 flex items-center gap-2 animate-fade-in-up">
+        <div className="fixed bottom-24 right-6 z-50 bg-[#6366F1]/95 text-[#0f0f1a] px-4 py-2.5 rounded-lg text-xs font-semibold shadow-xl backdrop-blur-sm border border-white/10 flex items-center gap-2 animate-fade-in-up" role="status" aria-live="polite">
           <span>🎯 Profile updated! Score: {scoreToast.oldScore} → {scoreToast.newScore}</span>
         </div>
       )}

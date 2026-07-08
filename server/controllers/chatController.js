@@ -294,6 +294,11 @@ function buildProfileContext(user) {
   return userToMergedProfile(user);
 }
 
+function userMessageAlreadyPersisted(session, text) {
+  const last = session.messages[session.messages.length - 1];
+  return last?.role === 'user' && last.content === text;
+}
+
 function buildAiPayload(session, text, profile, user, extractedFieldsSummary) {
   return {
     session_id: String(session._id),
@@ -377,7 +382,7 @@ exports.getSession = catchAsync(async (req, res, next) => {
 });
 
 exports.sendMessage = catchAsync(async (req, res, next) => {
-  const { text } = req.body;
+  const { text, skipUserMessage } = req.body;
 
   if (!text || !text.trim()) {
     return next(new AppError('Message text is required.', 400));
@@ -391,6 +396,8 @@ exports.sendMessage = catchAsync(async (req, res, next) => {
   if (!session) {
     return next(new AppError('Session not found.', 404));
   }
+
+  await assertAiAvailable();
 
   const user = getUser();
   const { extracted, validationMeta } = await extractAndValidateFromMessage(text, buildProfileContext(user));
@@ -414,7 +421,10 @@ exports.sendMessage = catchAsync(async (req, res, next) => {
     console.log(`[ProfileExtractor] Pending extraction (not saved): ${Object.keys(pendingExtraction).join(', ')}`);
   }
 
-  session.messages.push({ role: 'user', content: text });
+  const skipUserPush = skipUserMessage === true || userMessageAlreadyPersisted(session, text);
+  if (!skipUserPush) {
+    session.messages.push({ role: 'user', content: text });
+  }
 
   let reply;
   try {
@@ -680,12 +690,13 @@ exports.generateRoadmap = catchAsync(async (req, res, next) => {
     return next(new AppError('Roadmap generation returned no milestones. Please try again.', 503));
   }
   session.generatedRoadmap = roadmap;
+  session.isClosed = true;
   saveSession(session);
   summarizeSessionMemory('local-user', session._id, session.messages).catch((err) => {
     console.warn('[Memory] Failed to summarize session after roadmap:', err.message);
   });
 
-  res.status(200).json({ status: 'success', data: { roadmap } });
+  res.status(200).json({ status: 'success', data: { roadmap, session } });
 });
 
 exports.deleteSession = catchAsync(async (req, res, next) => {

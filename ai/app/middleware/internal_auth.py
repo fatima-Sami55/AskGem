@@ -10,7 +10,11 @@ from starlette.responses import JSONResponse
 logger = logging.getLogger("internal_auth")
 
 INTERNAL_API_KEY = os.getenv("AI_SERVER_SECRET") or os.getenv("INTERNAL_API_KEY")
-PUBLIC_PATHS = {"/health", "/health/ping", "/docs", "/openapi.json", "/redoc"}
+_IS_DEV = os.getenv("NODE_ENV", "development").lower() in ("development", "dev", "test")
+_DOCS_ENABLED = _IS_DEV and os.getenv("ASKPERI_ENABLE_API_DOCS", "1").lower() in ("1", "true", "yes")
+PUBLIC_PATHS = {"/health", "/health/ping"}
+if _DOCS_ENABLED:
+    PUBLIC_PATHS.update({"/docs", "/openapi.json", "/redoc"})
 
 
 class InternalAuthMiddleware(BaseHTTPMiddleware):

@@ -6,6 +6,7 @@ import { useProfile } from '../context/ProfileContext';
 import { useChat } from '../context/ChatContext';
 import api from '../services/api';
 import AiBusyBanner from '../components/features/AiBusyBanner';
+import RecommendationsBusyState from '../components/features/RecommendationsBusyState';
 
 import {
   fetchRecommendationsCached,
@@ -19,6 +20,7 @@ import { loadBookmarks, toggleBookmark, isBookmarked } from '../services/bookmar
 import ProfileIncompleteState from '../components/features/ProfileIncompleteState';
 
 import MascotLoader from '../components/mascot/MascotLoader';
+import AppShell from '../components/AppShell';
 
 import {
 
@@ -241,14 +243,12 @@ export default function UniversitiesPage() {
 
   if (profileReady && aiQueueBlocksSend && universities.length === 0 && !fromCache) {
     return (
-      <div className="min-h-screen bg-[#0F172A] text-white flex items-center justify-center p-6">
-        <div className="max-w-md w-full space-y-4">
-          <AiBusyBanner currentTask={aiQueue?.current_task} />
-          <p className="text-sm text-slate-400 text-center">
-            University recommendations will load automatically when Peri is free.
-          </p>
-        </div>
-      </div>
+      <RecommendationsBusyState
+        title={`Universities for ${displayName}`}
+        icon={GraduationCap}
+        currentTask={aiQueue?.current_task}
+        itemLabel="university recommendations"
+      />
     );
   }
 
@@ -262,37 +262,9 @@ export default function UniversitiesPage() {
 
   return (
 
-    <div className="min-h-screen bg-[#0F172A] text-white font-sans">
-
-      <header className="sticky top-0 z-20 bg-[#1E293B]/90 backdrop-blur border-b border-white/10 px-6 h-16 flex items-center justify-between">
-
-        <button
-
-          type="button"
-
-          onClick={() => navigate('/chat')}
-
-          className="flex items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white transition-colors"
-
-        >
-
-          <ArrowLeft className="w-4 h-4 text-[#6366F1]" /> Back to Chat
-
-        </button>
-
-        <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
-
-          <GraduationCap className="w-5 h-5 text-[#6366F1]" /> Universities for {displayName}
-
-        </h1>
-
-        <div className="w-20" />
-
-      </header>
-
-
-
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <AppShell title={`Universities for ${displayName}`}>
+    <div className="font-sans">
+      <div className="max-w-6xl mx-auto px-4 lg:px-8 py-8 space-y-6">
 
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4">
           <p className="text-sm font-semibold text-amber-200">Verify before you apply</p>
@@ -307,7 +279,7 @@ export default function UniversitiesPage() {
         )}
 
         {fromCache && cacheAgeMin != null && (
-          <div className="flex items-center justify-between gap-3 bg-[#1E293B]/80 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-400">
+          <div className="flex items-center justify-between gap-3 bg-[#16162a]/80 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-400">
             <span>Last updated {cacheAgeMin === 0 ? 'just now' : `${cacheAgeMin} min ago`}</span>
             <button
               type="button"
@@ -320,7 +292,7 @@ export default function UniversitiesPage() {
           </div>
         )}
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#1E293B] border border-white/10 rounded-2xl p-6 shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#16162a] border border-white/10 rounded-2xl p-6 shadow-xl">
 
           <div>
 
@@ -336,7 +308,7 @@ export default function UniversitiesPage() {
 
           {!error && (
 
-            <div className="flex items-center gap-2 bg-[#0F172A] px-4 py-2.5 rounded-xl border border-white/5 text-xs font-semibold text-slate-300">
+            <div className="flex items-center gap-2 bg-[#0f0f1a] px-4 py-2.5 rounded-xl border border-white/5 text-xs font-semibold text-slate-300">
 
               <Trophy className="w-4 h-4 text-amber-400" />
 
@@ -376,7 +348,7 @@ export default function UniversitiesPage() {
 
               to="/chat"
 
-              className="flex items-center gap-2 px-4 py-2 bg-[#6366F1] hover:bg-[#5558e3] rounded-xl text-xs font-bold transition-colors whitespace-nowrap"
+              className="flex items-center gap-2 px-4 py-2 bg-[#6366F1] hover:bg-[#5558DD] text-[#0f0f1a] rounded-xl text-xs font-bold transition-colors whitespace-nowrap"
 
             >
 
@@ -394,7 +366,7 @@ export default function UniversitiesPage() {
 
           <>
 
-            <div className="bg-[#1E293B] border border-white/10 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="bg-[#16162a] border border-white/10 rounded-2xl p-5 shadow-xl space-y-4">
 
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-white/10 pb-3">
 
@@ -414,7 +386,7 @@ export default function UniversitiesPage() {
 
                     onChange={(e) => setCountryFilter(e.target.value)}
 
-                    className="w-full bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
+                    className="w-full bg-[#0f0f1a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
 
                   >
 
@@ -462,15 +434,11 @@ export default function UniversitiesPage() {
                     type="button"
 
                     onClick={() => setFreeTuitionOnly((p) => !p)}
-
-                    className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-between border transition-all ${freeTuitionOnly ? 'bg-[#6366F1]/20 border-[#6366F1] text-white' : 'bg-[#0F172A] border-white/10 text-slate-400'}`}
-
+                    aria-pressed={freeTuitionOnly}
+                    className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-between border transition-all ${freeTuitionOnly ? 'bg-[#6366F1]/20 border-[#6366F1] text-white' : 'bg-[#0f0f1a] border-white/10 text-slate-400'}`}
                   >
-
                     <span>Tuition-Free Only</span>
-
                     {freeTuitionOnly && <Check className="w-3.5 h-3.5 text-[#6366F1]" />}
-
                   </button>
 
                 </div>
@@ -485,7 +453,7 @@ export default function UniversitiesPage() {
 
                     onChange={(e) => setSortBy(e.target.value)}
 
-                    className="w-full bg-[#0F172A] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
+                    className="w-full bg-[#0f0f1a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6366F1]"
 
                   >
 
@@ -506,7 +474,7 @@ export default function UniversitiesPage() {
 
 
             {filteredUnis.length === 0 && (
-              <div className="text-center py-10 bg-[#1E293B] border border-white/10 rounded-2xl">
+              <div className="text-center py-10 bg-[#16162a] border border-white/10 rounded-2xl">
                 <p className="text-sm text-slate-300">No universities match your current filters.</p>
                 <button
                   type="button"
@@ -541,7 +509,7 @@ export default function UniversitiesPage() {
 
                     key={uni.id}
 
-                    className="bg-[#1E293B] border border-white/10 rounded-2xl p-6 shadow-xl space-y-4 hover:border-[#6366F1]/50 transition-all flex flex-col justify-between"
+                    className="bg-[#16162a] border border-white/10 rounded-2xl p-6 shadow-xl space-y-4 hover:border-[#6366F1]/50 transition-all flex flex-col justify-between"
 
                   >
 
@@ -569,7 +537,7 @@ export default function UniversitiesPage() {
 
                           onClick={() => toggleSave(uni)}
 
-                          className={`p-2 rounded-xl border transition-all ${isSaved ? 'bg-indigo-500/20 border-[#6366F1] text-[#6366F1]' : 'bg-[#0F172A] border-white/10 text-slate-400 hover:text-white'}`}
+                          className={`p-2 rounded-xl border transition-all ${isSaved ? 'bg-[#6366F1]/20 border-[#6366F1] text-[#6366F1]' : 'bg-[#0f0f1a] border-white/10 text-slate-400 hover:text-white'}`}
 
                         >
 
@@ -581,7 +549,7 @@ export default function UniversitiesPage() {
 
 
 
-                      <div className="bg-[#0F172A] p-3 rounded-xl border border-white/5 space-y-1.5">
+                      <div className="bg-[#0f0f1a] p-3 rounded-xl border border-white/5 space-y-1.5">
 
                         <div className="flex justify-between items-center text-xs">
 
@@ -611,7 +579,7 @@ export default function UniversitiesPage() {
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
 
-                        <div className="bg-[#0F172A]/60 p-2.5 rounded-lg border border-white/5 text-slate-300">
+                        <div className="bg-[#0f0f1a]/60 p-2.5 rounded-lg border border-white/5 text-slate-300">
 
                           <span className="text-slate-500 block text-[10px] uppercase font-bold">Requirements</span>
 
@@ -625,7 +593,7 @@ export default function UniversitiesPage() {
 
                         </div>
 
-                        <div className="bg-[#0F172A]/60 p-2.5 rounded-lg border border-white/5 text-slate-300">
+                        <div className="bg-[#0f0f1a]/60 p-2.5 rounded-lg border border-white/5 text-slate-300">
 
                           <span className="text-slate-500 block text-[10px] uppercase font-bold">Tuition</span>
 
@@ -699,7 +667,7 @@ export default function UniversitiesPage() {
                 type="button"
                 onClick={handleRefresh}
                 disabled={aiQueueBlocksSend}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[#6366F1] hover:bg-[#5558e3] rounded-xl text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#6366F1] hover:bg-[#5558DD] text-[#0f0f1a] rounded-xl text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <RefreshCw className="w-4 h-4" /> Refresh
               </button>
@@ -715,9 +683,8 @@ export default function UniversitiesPage() {
       </div>
 
     </div>
-
+    </AppShell>
   );
-
 }
 
 

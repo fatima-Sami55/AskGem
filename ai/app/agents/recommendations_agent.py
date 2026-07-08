@@ -316,8 +316,10 @@ def _normalize_university_item(item: dict, country: str) -> dict | None:
         return None
 
     score_raw = item.get("matchScore") if item.get("matchScore") is not None else item.get("score")
+    # LLM-synthesized scores are not verified — omit them (same pattern as roadmap).
+    source = item.get("source", "llm")
     match_score = None
-    if score_raw is not None and score_raw != "":
+    if source != "llm" and score_raw is not None and score_raw != "":
         try:
             match_score = min(100, max(0, int(score_raw)))
         except (TypeError, ValueError):
@@ -342,8 +344,8 @@ def _normalize_university_item(item: dict, country: str) -> dict | None:
         "whyItFits": why_text,
         "sourceUrl": url,
         "matchScore": match_score,
-        "verified": True,
-        "source": item.get("source", "llm"),
+        "verified": source != "llm",
+        "source": source,
     }
 
 
@@ -357,8 +359,9 @@ def _normalize_scholarship_item(item: dict, country: str) -> dict | None:
     if not url.startswith("http"):
         return None
     score_raw = item.get("matchScore") if item.get("matchScore") is not None else item.get("score")
+    source = item.get("source", "llm")
     match_score = None
-    if score_raw is not None and score_raw != "":
+    if source != "llm" and score_raw is not None and score_raw != "":
         try:
             match_score = min(100, max(0, int(score_raw)))
         except (TypeError, ValueError):
@@ -374,8 +377,8 @@ def _normalize_scholarship_item(item: dict, country: str) -> dict | None:
         "whyItFits": str(item.get("whyItFits") or "Potential match for your profile.").strip(),
         "sourceUrl": url,
         "matchScore": match_score,
-        "verified": item.get("verified", True),
-        "source": item.get("source", "llm"),
+        "verified": item.get("verified", source != "llm"),
+        "source": source,
     }
 
 

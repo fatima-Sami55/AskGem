@@ -13,8 +13,7 @@ const SimpleBadge = ({ children, className }) => (
 
 export const UniversityCard = ({ university }) => {
     return (
-        <Card className="hover:shadow-lg transition-all duration-300 border-none shadow-md bg-gradient-to-br from-card to-secondary/30 overflow-hidden group">
-            <div className="h-2 w-full bg-gradient-to-r from-brand to-accent" />
+        <Card className="hover:shadow-md transition-all duration-300 border border-white/10 hover:border-[#6366F1]/30 bg-[#16162a] overflow-hidden group">
             <CardHeader className="pb-2 relative">
                 <div className="flex justify-between items-start gap-4">
                     <div>

@@ -9,7 +9,6 @@ dotenv.config();
 const { connectDB, isHealthy } = require('./db');
 const AppError = require('./utils/appError');
 const { getAiServerUrl, getAiServerHeaders } = require('./utils/aiServerClient');
-const { getEffectiveTavilyKey } = require('./controllers/settingsController');
 
 const app = express();
 const HOST = '127.0.0.1';
@@ -29,13 +28,24 @@ app.use(express.json({ limit: '100kb', strict: false }));
 
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev', {
-    skip: (req) => req.path === '/api/v1/ai/queue' || req.path === '/api/v1/health',
+    skip: (req) =>
+      req.path === '/api/v1/ai/queue'
+      || req.path === '/api/v1/health'
+      || req.path === '/api/v1/health/live',
   }));
 }
 
 const chatRoutes = require('./routes/chatRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+
+app.get('/api/v1/health/live', (req, res) => {
+  const dbOk = isHealthy();
+  res.status(dbOk ? 200 : 503).json({
+    status: dbOk ? 'ok' : 'degraded',
+    db: dbOk,
+  });
+});
 
 app.get('/api/v1/health', async (req, res) => {
   const dbOk = isHealthy();
@@ -145,10 +155,6 @@ app.use((err, req, res, next) => {
 
 if (require.main === module) {
   connectDB();
-  const tavilyKey = getEffectiveTavilyKey();
-  if (tavilyKey) {
-    process.env.TAVILY_API_KEY = tavilyKey;
-  }
   const httpServer = app.listen(PORT, HOST, () => {
     console.log(`✅ Server running on http://${HOST}:${PORT}${isProduction ? ' (production)' : ''}`);
   });

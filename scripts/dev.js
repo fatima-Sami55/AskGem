@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { ROOT, getVenvPython } = require('./lib/config');
 const { checkOllamaModel } = require('./lib/ollama');
+const { killDevPorts } = require('./lib/kill-dev-ports');
 
 const isWin = process.platform === 'win32';
 const python = getVenvPython();
@@ -50,6 +51,10 @@ async function main() {
     process.exit(1);
   }
   console.log(`✓ Ollama + ${ollama.modelName} ready\n`);
+
+  console.log('Stopping stale dev processes on ports 8000, 5000, 5173...');
+  killDevPorts();
+  console.log('');
 
   ensureEnvFiles();
   ensureVenv();
